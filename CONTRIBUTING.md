@@ -78,11 +78,16 @@ The resulting binary is at `chromium/src/out/Release/TheBrowserProject.exe` (the
   under `overlay/`, not squeezed into a patch.
 
 `.github/workflows/ci.yml` re-checks all of this on our self-hosted runner
-on every push to `main` and every pull request. Pushes to other branches
-instead trigger `.github/workflows/beta.yml`, which builds and publishes a
-rolling prerelease rather than gating a merge — so a direct push to a
+on every push to `main` and every pull request — so a direct push to a
 feature branch does **not** produce the required `ci` status check; open a
-PR for that.
+PR for that. `.github/workflows/release.yml` builds and publishes a rolling
+`latest` prerelease whenever a PR actually merges into `main` — this is an
+interim placeholder for grabbing a runnable build (see
+[#13](https://github.com/Cookiesmuch/TheBrowserProject/issues/13) for the
+real versioning/changelog/auto-update system this will eventually become).
+It deliberately does **not** run on every push to a feature branch — that
+was the old `beta.yml`, which doubled CI cost on every single push while
+iterating on a PR; removed for exactly that reason.
 
 ## Self-hosted runner setup
 
@@ -104,23 +109,27 @@ instead. To register a machine as a runner:
    `chromium-build` (our workflows target
    `runs-on: [self-hosted, windows, chromium-build]`).
 4. Install it as a Windows service so it survives reboots and keeps
-   listening for jobs:
+   listening for jobs. There's no `./svc install` script in this runner
+   version (despite older docs mentioning one) — reconfigure with
+   `--runasservice` instead, which installs and starts the service as part
+   of setup:
    ```powershell
-   ./svc install
-   ./svc start
+   ./config.cmd --url https://github.com/Cookiesmuch/TheBrowserProject --token <token-from-github> --runasservice
    ```
-5. Confirm it shows as **Idle** under Settings → Actions → Runners.
+5. Confirm it shows as **Idle** under Settings → Actions → Runners, and as
+   `Running` via `Get-Service actions.runner.*`.
 6. Make sure the machine has depot_tools' prerequisites available (Visual
    Studio 2022 Build Tools + Windows SDK) and ~100GB free disk — the same
-   requirements as a local build, above.
+   requirements as a local build, above. (`scripts/setup.ps1` handles all of
+   this automatically if you'd rather not do it by hand.)
 7. Install the [GitHub CLI](https://cli.github.com/) (`winget install
    GitHub.cli` or the MSI installer) and make sure `gh` is on `PATH` for the
-   runner service account. `beta.yml`/`release.yml` use it to publish
-   releases, and unlike GitHub-hosted images, self-hosted runners don't ship
-   with it preinstalled.
+   runner service account. `release.yml` uses it to publish releases, and
+   unlike GitHub-hosted images, self-hosted runners don't ship with it
+   preinstalled.
 
-Once registered, `ci.yml` / `beta.yml` / `release.yml` will start picking up
-jobs automatically.
+Once registered, `ci.yml` / `release.yml` will start picking up jobs
+automatically.
 
 **Security note:** `ci.yml` is guarded to skip pull requests from forks
 (fork PRs would otherwise run untrusted PowerShell — bootstrap/apply-patches/

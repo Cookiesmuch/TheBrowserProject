@@ -1,8 +1,13 @@
 name: release
 
+# Interim: publishes a rolling "latest" prerelease whenever code lands on main
+# (i.e. after a PR merges), replacing the old per-push-to-any-branch beta.yml —
+# that was doubling CI cost on every single push while iterating on a PR.
+# This is a placeholder, not the real versioning system: see #13 for the actual
+# plan (codenamed majors, in-browser changelogs, a real auto-update mechanism).
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
 
 permissions:
   contents: write
@@ -42,16 +47,23 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
-          $tag = "$env:GITHUB_REF_NAME"
-          $zipName = "TheBrowserProject-$tag.zip"
+          $version = (Get-Content chromium.version -Raw).Trim()
+          $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+          $zipName = "TheBrowserProject-$version-$stamp.zip"
           Compress-Archive -Path "chromium/src/out/Release/*" -DestinationPath $zipName -Force
           echo "ZIP_NAME=$zipName" >> $env:GITHUB_ENV
 
-      - name: Publish release
+      - name: Publish rolling release
         shell: pwsh
         run: |
-          gh release create "$env:GITHUB_REF_NAME" "$env:ZIP_NAME" `
-            --title "$env:GITHUB_REF_NAME" `
-            --generate-notes
+          # --cleanup-tag also deletes the "latest" tag itself — otherwise the next
+          # `gh release create` would reuse the stale tag (defaulting to whatever
+          # commit it last pointed at) instead of this run's actual commit.
+          gh release delete latest --yes --cleanup-tag 2>$null
+          gh release create latest "$env:ZIP_NAME" `
+            --target "$env:GITHUB_SHA" `
+            --title "Latest (main)" `
+            --notes "Automated build from main, commit $env:GITHUB_SHA." `
+            --prerelease
         env:
           GH_TOKEN: ${{ github.token }}

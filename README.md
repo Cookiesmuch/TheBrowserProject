@@ -115,11 +115,12 @@ Binary lands at `chromium/src/out/Release/TheBrowserProject.exe`.
 
 ## Getting a build to test
 
-Every push to a PR branch triggers `beta.yml`, which builds and refreshes a
-rolling prerelease on the
+Every push to `main` (i.e. every merged PR) triggers `release.yml`, which
+builds and refreshes a rolling `latest` prerelease on the
 [Releases page](https://github.com/Cookiesmuch/TheBrowserProject/releases) —
 that's the primary way to grab a runnable build without building it
-yourself.
+yourself. This is a placeholder for a real versioning/changelog/auto-update
+system — see [#13](https://github.com/Cookiesmuch/TheBrowserProject/issues/13).
 
 ## Contributing
 

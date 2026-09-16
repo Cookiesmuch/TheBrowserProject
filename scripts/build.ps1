@@ -103,9 +103,22 @@ try {
         }
     }
 
-    Write-Step "autoninja -C $OutDir $Target"
-    & autoninja -C $OutDir $Target
-    if ($LASTEXITCODE -ne 0) { throw "autoninja build failed" }
+    # Calling siso directly rather than through the `autoninja` wrapper.
+    # autoninja fails instantly in CI's non-interactive execution context with an
+    # unhelpful "Error: The system cannot find the path specified." — most likely
+    # from depot_tools' gclient_paths.FindGclientRoot() walking up the directory
+    # tree to locate the ninja/siso binary and resolving it differently there than
+    # in an interactive session (this project's checkout sits behind an NTFS
+    # junction, which is a plausible trigger). Direct siso invocation has been
+    # 100% reliable across every build today; autoninja's wrapper logic mainly
+    # adds -j core-count tuning, which GN already bakes into the generated
+    # .siso_config for this machine (see gn_logs:cpu_count etc. in that file), so
+    # nothing meaningful is lost by skipping the wrapper.
+    $sisoPath = Join-Path $ChromiumSrc "third_party\siso\cipd\siso.exe"
+    if (-not (Test-Path $sisoPath)) { throw "siso.exe not found at $sisoPath" }
+    Write-Step "siso ninja -C $OutDir $Target"
+    & $sisoPath ninja -C $OutDir $Target
+    if ($LASTEXITCODE -ne 0) { throw "siso build failed" }
 
     # The internal GN target/binary stays named "chrome" (chrome.exe) — renaming that
     # would ripple into installer/packaging/test scripts across the tree that reference
