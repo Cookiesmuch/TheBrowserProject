@@ -85,6 +85,24 @@ try {
     & gn gen $OutDir
     if ($LASTEXITCODE -ne 0) { throw "gn gen failed" }
 
+    # siso (the ninja-compatible build tool GN generates for) can leave .siso_lock
+    # behind even after a clean exit — seen twice now. A stale lock makes the next
+    # invocation die instantly with an unhelpful "path specified" error. Clear it
+    # if the PID it references isn't actually running, so a build never needs
+    # manual intervention to recover from a prior run (clean or interrupted).
+    $lockPidFile = Join-Path $outPath ".siso_lock.pid"
+    if (Test-Path $lockPidFile) {
+        $lockPid = (Get-Content $lockPidFile -Raw).Trim() -replace '^pid=', ''
+        $stillRunning = $false
+        if ($lockPid -match '^\d+$') {
+            $stillRunning = [bool](Get-Process -Id ([int]$lockPid) -ErrorAction SilentlyContinue)
+        }
+        if (-not $stillRunning) {
+            Write-Step "Clearing stale siso lock (pid $lockPid is not running)"
+            Remove-Item (Join-Path $outPath ".siso_lock"), $lockPidFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     Write-Step "autoninja -C $OutDir $Target"
     & autoninja -C $OutDir $Target
     if ($LASTEXITCODE -ne 0) { throw "autoninja build failed" }
@@ -96,7 +114,23 @@ try {
     # just gives us the product-facing binary name for what we actually ship.
     $brandedExe = Join-Path $outPath "TheBrowserProject.exe"
     Copy-Item (Join-Path $outPath "$Target.exe") $brandedExe -Force
-    Write-Step "Build complete: $outPath\$Target.exe (also copied as $brandedExe)"
+
+    # chrome.exe can't run standalone — it needs chrome.dll, the .pak resource
+    # files, icudtl.dat, locales/, etc. alongside it, so we link the whole output
+    # directory into the repo instead of copying gigabytes of it on every build.
+    # A junction needs no elevation (unlike a symlink) and costs zero extra disk.
+    $repoLink = Join-Path $RepoRoot "out"
+    $existingLink = Get-Item $repoLink -ErrorAction SilentlyContinue
+    if ($existingLink -and $existingLink.LinkType -eq "Junction" -and $existingLink.Target -eq $outPath) {
+        Write-Step "$repoLink already links to $outPath"
+    } else {
+        if (Test-Path $repoLink) { Remove-Item $repoLink -Force -Recurse }
+        New-Item -ItemType Junction -Path $repoLink -Target $outPath | Out-Null
+        Write-Step "Linked $repoLink -> $outPath"
+    }
+
+    Write-Step "Build complete: $outPath\$Target.exe"
+    Write-Step "Also reachable at $repoLink\TheBrowserProject.exe (and $repoLink\$Target.exe)"
 } finally {
     Pop-Location
 }
