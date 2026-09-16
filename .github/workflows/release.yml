@@ -1,0 +1,42 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build-and-publish:
+    name: build + publish release
+    runs-on: [self-hosted, windows, chromium-build]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Bootstrap (depot_tools + gclient sync)
+        shell: pwsh
+        run: ./scripts/bootstrap.ps1
+
+      - name: Apply overlay + patches
+        shell: pwsh
+        run: ./scripts/apply-patches.ps1
+
+      - name: Build
+        shell: pwsh
+        run: ./scripts/build.ps1
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $tag = "$env:GITHUB_REF_NAME"
+          $zipName = "TheBrowserProject-$tag.zip"
+          Compress-Archive -Path "chromium/src/out/Release/*" -DestinationPath $zipName -Force
+          echo "ZIP_NAME=$zipName" >> $env:GITHUB_ENV
+
+      - name: Publish release
+        shell: pwsh
+        run: |
+          gh release create "$env:GITHUB_REF_NAME" "$env:ZIP_NAME" `
+            --title "$env:GITHUB_REF_NAME" `
+            --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

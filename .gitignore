@@ -1,0 +1,15 @@
+# Local Chromium checkout and toolchain (never committed — see chromium.version + patches/)
+/chromium/
+/depot_tools/
+/out/
+
+# Build artifacts
+*.pdb
+*.obj
+*.ilk
+
+# Editor/OS cruft
+.vs/
+.vscode/
+*.user
+Thumbs.db
