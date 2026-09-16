@@ -31,9 +31,11 @@ Write-Step "Pinned Chromium version: $pinnedTag"
 if (-not (Test-Path $DepotToolsDir)) {
     Write-Step "Cloning depot_tools into $DepotToolsDir"
     git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git $DepotToolsDir
+    if ($LASTEXITCODE -ne 0) { throw "git clone of depot_tools failed (exit $LASTEXITCODE)" }
 } else {
     Write-Step "Updating existing depot_tools in $DepotToolsDir"
     git -C $DepotToolsDir pull --ff-only
+    if ($LASTEXITCODE -ne 0) { throw "git pull in depot_tools failed (exit $LASTEXITCODE)" }
 }
 
 $env:PATH = "$DepotToolsDir;$env:PATH"
@@ -55,6 +57,7 @@ if (-not (Test-Path $ChromiumDir)) {
     Push-Location $ChromiumDir
     try {
         & fetch --nohooks chromium
+        if ($LASTEXITCODE -ne 0) { throw "'fetch chromium' failed (exit $LASTEXITCODE)" }
     } finally {
         Pop-Location
     }
@@ -69,11 +72,29 @@ Write-Step "Checking out pinned commit $pinnedCommit"
 Push-Location $srcDir
 try {
     git fetch origin $pinnedCommit
+    if ($LASTEXITCODE -ne 0) { throw "git fetch of pinned commit failed (exit $LASTEXITCODE)" }
+
     git checkout $pinnedCommit
+    if ($LASTEXITCODE -ne 0) { throw "git checkout of pinned commit failed (exit $LASTEXITCODE)" }
+
+    # A prior CI/local run may have left patches applied (tracked-file edits) and
+    # overlay files copied in (untracked). Discard both so apply-patches.ps1 always
+    # starts from a pristine pinned tree — otherwise reapplying an already-applied
+    # patch fails, and deleted overlay files linger. This intentionally does NOT
+    # touch out/ (build output) or third_party/ caches, since -e only excludes
+    # explicit paths and out/ isn't tracked/patched — see git clean excludes below.
+    git reset --hard $pinnedCommit
+    if ($LASTEXITCODE -ne 0) { throw "git reset --hard failed (exit $LASTEXITCODE)" }
+    git clean -ffd -e out -e out/Release
+    if ($LASTEXITCODE -ne 0) { throw "git clean failed (exit $LASTEXITCODE)" }
+
     Write-Step "Running gclient sync (incremental after first run)"
     & gclient sync --with_branch_heads --with_tags -D
+    if ($LASTEXITCODE -ne 0) { throw "gclient sync failed (exit $LASTEXITCODE)" }
+
     Write-Step "Running gclient runhooks"
     & gclient runhooks
+    if ($LASTEXITCODE -ne 0) { throw "gclient runhooks failed (exit $LASTEXITCODE)" }
 } finally {
     Pop-Location
 }

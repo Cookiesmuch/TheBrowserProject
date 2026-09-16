@@ -10,9 +10,20 @@ jobs:
   build:
     name: sync, patch, build, smoke-test
     runs-on: [self-hosted, windows, chromium-build]
+    # SECURITY: this job runs PR-controlled PowerShell (bootstrap/apply-patches/build)
+    # on a persistent self-hosted runner with disk/network/credential access. Never let
+    # it run for a PR from a fork — only same-repo branches/PRs are trusted here. Also
+    # keep "Require approval for first-time contributors" enabled under
+    # Settings -> Actions -> General for this repo.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Default clean=true runs `git clean -ffdx`, which also deletes ignored
+          # paths — including the cached chromium/ checkout and depot_tools/ this
+          # runner is supposed to reuse across runs. Keep them.
+          clean: false
 
       - name: Bootstrap (depot_tools + gclient sync)
         shell: pwsh

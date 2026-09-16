@@ -22,6 +22,10 @@ if (-not (Test-Path $ChromiumSrc)) {
 }
 
 $env:PATH = "$DepotToolsDir;$env:PATH"
+# bootstrap.ps1 sets this too, but it's process-local — CI runs each script as a
+# separate step/process, so it doesn't carry over. Without it, gn/ninja may try to
+# fetch depot_tools' bundled Windows toolchain instead of using the installed VS one.
+$env:DEPOT_TOOLS_WIN_TOOLCHAIN = "0"
 
 $argsTemplate = Join-Path $RepoRoot "args.gn.template"
 if (-not (Test-Path $argsTemplate)) {

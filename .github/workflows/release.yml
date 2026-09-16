@@ -4,6 +4,9 @@ on:
   push:
     tags: ["v*"]
 
+permissions:
+  contents: write
+
 jobs:
   build-and-publish:
     name: build + publish release
@@ -11,6 +14,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # See ci.yml — clean=true would delete the cached chromium/ and
+          # depot_tools/ checkouts this runner is meant to reuse.
+          clean: false
+
+      - name: Verify GitHub CLI is available
+        shell: pwsh
+        run: |
+          if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+            throw "GitHub CLI (gh) not found on this runner. Install it during runner provisioning (see CONTRIBUTING.md) before this workflow can publish releases."
+          }
+          gh --version
 
       - name: Bootstrap (depot_tools + gclient sync)
         shell: pwsh

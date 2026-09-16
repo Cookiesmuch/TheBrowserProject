@@ -74,8 +74,12 @@ The resulting binary is at `chromium/src/out/Release/chrome.exe`.
 - New patches are numbered and ordered correctly; new standalone files live
   under `overlay/`, not squeezed into a patch.
 
-CI (`.github/workflows/ci.yml`) re-checks all of this on our self-hosted
-runner on every push and PR.
+`.github/workflows/ci.yml` re-checks all of this on our self-hosted runner
+on every push to `main` and every pull request. Pushes to other branches
+instead trigger `.github/workflows/beta.yml`, which builds and publishes a
+rolling prerelease rather than gating a merge — so a direct push to a
+feature branch does **not** produce the required `ci` status check; open a
+PR for that.
 
 ## Self-hosted runner setup
 
@@ -106,9 +110,21 @@ instead. To register a machine as a runner:
 6. Make sure the machine has depot_tools' prerequisites available (Visual
    Studio 2022 Build Tools + Windows SDK) and ~100GB free disk — the same
    requirements as a local build, above.
+7. Install the [GitHub CLI](https://cli.github.com/) (`winget install
+   GitHub.cli` or the MSI installer) and make sure `gh` is on `PATH` for the
+   runner service account. `beta.yml`/`release.yml` use it to publish
+   releases, and unlike GitHub-hosted images, self-hosted runners don't ship
+   with it preinstalled.
 
 Once registered, `ci.yml` / `beta.yml` / `release.yml` will start picking up
 jobs automatically.
+
+**Security note:** `ci.yml` is guarded to skip pull requests from forks
+(fork PRs would otherwise run untrusted PowerShell — bootstrap/apply-patches/
+build — directly on this persistent, credentialed runner). Keep **Settings →
+Actions → General → "Require approval for first-time contributors"** enabled
+as a second layer of defense if this repo ever goes public with outside
+contributors.
 
 ## Repo settings (if not already configured)
 

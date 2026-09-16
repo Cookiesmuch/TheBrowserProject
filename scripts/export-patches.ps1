@@ -6,6 +6,13 @@
 .DESCRIPTION
     Use this after hand-editing files in ./chromium/src to author or update
     a patch. It does NOT run in CI — it's for local patch authoring only.
+
+    apply-patches.ps1 commits overlay files and each applied patch locally
+    as it goes, so HEAD is always "the last applied patch." This diffs your
+    uncommitted edits against HEAD — i.e. only what's new since the last
+    patch — instead of the whole cumulative series. Run apply-patches.ps1
+    first (on a fresh bootstrap) so HEAD reflects the existing series
+    before you start hand-editing.
 #>
 [CmdletBinding()]
 param(
@@ -40,7 +47,7 @@ $outFile = Join-Path $patchesDir $PatchName
 Push-Location $ChromiumSrc
 try {
     Write-Host "==> Writing $outFile from current working-tree diff" -ForegroundColor Cyan
-    git diff --no-color > $outFile
+    git diff --no-color --binary > $outFile
 } finally {
     Pop-Location
 }

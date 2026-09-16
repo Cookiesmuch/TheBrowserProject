@@ -6,6 +6,13 @@
 .DESCRIPTION
     Fails fast on the first patch that doesn't apply cleanly, naming it, so
     CI catches a bad patch in seconds rather than after a multi-hour build.
+
+    Overlay files and each applied patch are committed locally in the
+    Chromium checkout (this history is never pushed anywhere — chromium/src
+    is gitignored). This keeps re-runs idempotent (bootstrap.ps1 resets to
+    the pinned commit + cleans untracked files before this runs) and gives
+    scripts/export-patches.ps1 a correct baseline: a new patch's diff is
+    just what changed since the last patch commit, not the whole series.
 #>
 [CmdletBinding()]
 param(
@@ -23,6 +30,18 @@ if (-not (Test-Path $ChromiumSrc)) {
     throw "Chromium checkout not found at $ChromiumSrc — run bootstrap.ps1 first"
 }
 
+function Invoke-GitCommit($message) {
+    Push-Location $ChromiumSrc
+    try {
+        & git add -A
+        if ($LASTEXITCODE -ne 0) { throw "git add failed (exit $LASTEXITCODE)" }
+        & git -c user.name="tbp-fork-bot" -c user.email="tbp-fork-bot@localhost" commit -m $message --quiet
+        if ($LASTEXITCODE -ne 0) { throw "git commit failed for '$message' (exit $LASTEXITCODE)" }
+    } finally {
+        Pop-Location
+    }
+}
+
 # --- overlay: copy new files verbatim, preserving relative paths ---
 $overlayDir = Join-Path $RepoRoot "overlay"
 $overlayFiles = Get-ChildItem -Path $overlayDir -Recurse -File | Where-Object { $_.Name -ne ".gitkeep" }
@@ -37,6 +56,7 @@ if ($overlayFiles.Count -eq 0) {
         Copy-Item $file.FullName $dest -Force
         Write-Host "    $relPath"
     }
+    Invoke-GitCommit "tbp: overlay files"
 }
 
 # --- patches: apply in lexical order ---
@@ -54,6 +74,7 @@ if ($patchFiles.Count -eq 0) {
             if ($LASTEXITCODE -ne 0) {
                 throw "Patch failed to apply cleanly: $($patch.Name). Fix the patch (see scripts/export-patches.ps1) before continuing."
             }
+            Invoke-GitCommit "patch: $($patch.Name)"
         }
     } finally {
         Pop-Location
