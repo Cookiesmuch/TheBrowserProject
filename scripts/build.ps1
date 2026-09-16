@@ -22,10 +22,13 @@ if (-not (Test-Path $ChromiumSrc)) {
 }
 
 $env:PATH = "$DepotToolsDir;$env:PATH"
-# bootstrap.ps1 sets this too, but it's process-local — CI runs each script as a
-# separate step/process, so it doesn't carry over. Without it, gn/ninja may try to
-# fetch depot_tools' bundled Windows toolchain instead of using the installed VS one.
+# bootstrap.ps1 sets these too, but they're process-local — CI runs each script as
+# a separate step/process, so they don't carry over. Without DEPOT_TOOLS_WIN_TOOLCHAIN,
+# gn/ninja may try to fetch depot_tools' bundled Windows toolchain instead of the
+# installed VS one. Without DEPOT_TOOLS_UPDATE=0, `gn` (also a depot_tools tool)
+# can trigger the same self-update-on-invocation hang seen in bootstrap.
 $env:DEPOT_TOOLS_WIN_TOOLCHAIN = "0"
+$env:DEPOT_TOOLS_UPDATE = "0"
 
 # Pin the toolchain to VS2022 explicitly. Without this, Chromium's toolchain
 # detection (build/toolchain/win/setup_toolchain.py) picks whichever installed VS

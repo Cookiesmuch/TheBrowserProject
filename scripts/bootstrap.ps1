@@ -43,6 +43,14 @@ if (-not (Test-Path $DepotToolsDir)) {
 
 $env:PATH = "$DepotToolsDir;$env:PATH"
 $env:DEPOT_TOOLS_WIN_TOOLCHAIN = "0"
+# Disable depot_tools' own self-update-on-every-invocation. It's not just slow —
+# in CI's non-interactive context it appears to hang outright (a run sat with a
+# live but idle git-remote-https process, zero active network connections, for
+# 12+ minutes with no console output, on a step that normally takes under a
+# minute once the cache is warm). It's also bad for reproducibility regardless:
+# an uncontrolled auto-update could silently change the depot_tools version
+# between runs. We pin by only ever cloning once and leaving it alone.
+$env:DEPOT_TOOLS_UPDATE = "0"
 
 # --- resolve pinned tag to exact commit (never trust a hash hardcoded in docs) ---
 Write-Step "Resolving $pinnedTag to an exact commit"
