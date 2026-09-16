@@ -30,11 +30,31 @@ if (-not (Test-Path $ChromiumSrc)) {
     throw "Chromium checkout not found at $ChromiumSrc — run bootstrap.ps1 first"
 }
 
-function Invoke-GitCommit($message) {
+# Refuse to start if a TRACKED file is already modified going in. This is a
+# sanity check that bootstrap.ps1's reset actually left a clean tree — if it
+# didn't, something unexpected happened and a human needs to look, rather than
+# silently proceeding. Deliberately ignores untracked entries ("??"): a real
+# Chromium checkout normally has untracked nested-repo directories from
+# third_party/ (not registered as formal git submodules), and flagging those
+# would refuse to run on every single checkout. The actual risk Copilot's
+# review flagged — `git add -A` sweeping up unrelated state — is now handled
+# by staging exact paths below instead, so this check doesn't need to be the
+# only line of defense.
+Push-Location $ChromiumSrc
+try {
+    $trackedDirty = git status --porcelain | Where-Object { -not $_.StartsWith("??") }
+    if ($trackedDirty) {
+        throw "Chromium checkout at $ChromiumSrc has modified tracked files already — refusing to start (would risk committing unrelated changes). Run bootstrap.ps1 to reset it, or investigate manually.`n$trackedDirty"
+    }
+} finally {
+    Pop-Location
+}
+
+function Invoke-GitCommit($message, [string[]]$Paths) {
     Push-Location $ChromiumSrc
     try {
-        & git add -A
-        if ($LASTEXITCODE -ne 0) { throw "git add failed (exit $LASTEXITCODE)" }
+        & git add -- @Paths
+        if ($LASTEXITCODE -ne 0) { throw "git add failed for $($Paths -join ', ') (exit $LASTEXITCODE)" }
         & git -c user.name="tbp-fork-bot" -c user.email="tbp-fork-bot@localhost" commit -m $message --quiet
         if ($LASTEXITCODE -ne 0) { throw "git commit failed for '$message' (exit $LASTEXITCODE)" }
     } finally {
@@ -49,14 +69,16 @@ if ($overlayFiles.Count -eq 0) {
     Write-Step "overlay/ is empty (no-op) — nothing to copy"
 } else {
     Write-Step "Copying $($overlayFiles.Count) overlay file(s) into checkout"
+    $copiedRelPaths = @()
     foreach ($file in $overlayFiles) {
         $relPath = $file.FullName.Substring($overlayDir.Length).TrimStart('\', '/')
         $dest = Join-Path $ChromiumSrc $relPath
         New-Item -ItemType Directory -Path (Split-Path $dest -Parent) -Force | Out-Null
         Copy-Item $file.FullName $dest -Force
         Write-Host "    $relPath"
+        $copiedRelPaths += $relPath
     }
-    Invoke-GitCommit "tbp: overlay files"
+    Invoke-GitCommit "tbp: overlay files" $copiedRelPaths
 }
 
 # --- patches: apply in lexical order ---
@@ -70,6 +92,16 @@ if ($patchFiles.Count -eq 0) {
     try {
         foreach ($patch in $patchFiles) {
             Write-Host "    applying $($patch.Name)"
+
+            # Get exactly which files this patch touches before applying, so the
+            # commit afterward stages only those — not `-A`, which could sweep up
+            # unrelated dirty state.
+            $numstat = & git apply --numstat $patch.FullName
+            $patchPaths = @($numstat | ForEach-Object { ($_ -split "`t")[2] } | Where-Object { $_ })
+            if ($patchPaths.Count -eq 0) {
+                throw "Could not determine which files $($patch.Name) touches (git apply --numstat returned nothing) — refusing to apply."
+            }
+
             # --3way falls back to a real three-way merge (using the blobs the patch was
             # generated against) when a plain context-match fails — this matters most
             # after a chromium.version bump, where upstream may have touched nearby but
@@ -80,7 +112,7 @@ if ($patchFiles.Count -eq 0) {
             if ($LASTEXITCODE -ne 0) {
                 throw "Patch failed to apply cleanly: $($patch.Name). Fix the patch (see scripts/export-patches.ps1) before continuing."
             }
-            Invoke-GitCommit "patch: $($patch.Name)"
+            Invoke-GitCommit "patch: $($patch.Name)" $patchPaths
         }
     } finally {
         Pop-Location

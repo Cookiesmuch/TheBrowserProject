@@ -57,19 +57,27 @@ if (-not $PatchName.EndsWith(".patch")) {
 
 $outFile = Join-Path $patchesDir $PatchName
 
+# Write to a temp file first. `git diff ... > $outFile` would truncate an
+# existing patch immediately on open, before the empty-diff check below ever
+# runs — so re-running this with no pending changes against an existing
+# $PatchName would silently wipe a valid, already-committed patch. Only touch
+# the real target once we know the diff is actually non-empty.
+$tempFile = Join-Path $patchesDir "$PatchName.tmp"
 Push-Location $ChromiumSrc
 try {
-    Write-Host "==> Writing $outFile from current working-tree diff" -ForegroundColor Cyan
-    git diff --no-color --binary > $outFile
+    Write-Host "==> Diffing current working tree against HEAD" -ForegroundColor Cyan
+    git diff --no-color --binary > $tempFile
 } finally {
     Pop-Location
 }
 
-if ((Get-Item $outFile).Length -eq 0) {
-    Remove-Item $outFile
-    Write-Warning "No changes detected in $ChromiumSrc — nothing written."
+if ((Get-Item $tempFile).Length -eq 0) {
+    Remove-Item $tempFile
+    Write-Warning "No changes detected in $ChromiumSrc — nothing written. $outFile left untouched."
     exit 0
 }
+
+Move-Item $tempFile $outFile -Force
 
 Write-Host "==> Wrote $outFile" -ForegroundColor Green
 Write-Host "    Remember to also copy any wholesale NEW files into overlay/ instead of patches/."

@@ -54,7 +54,13 @@ $pinnedCommit = ($lsRemote -split "\s+")[0]
 Write-Step "Resolved $pinnedTag -> $pinnedCommit"
 
 # --- fetch/sync ---
-if (-not (Test-Path $ChromiumDir)) {
+# Gate on an actual checkout marker (.gclient), not just $ChromiumDir existing —
+# if a first fetch is interrupted (or the directory was pre-created for any
+# reason) before .gclient is written, checking the bare directory would skip
+# `fetch` entirely and the script would throw later at the missing-srcDir check,
+# unable to recover on rerun.
+$gclientMarker = Join-Path $ChromiumDir ".gclient"
+if (-not (Test-Path $gclientMarker)) {
     New-Item -ItemType Directory -Path $ChromiumDir -Force | Out-Null
     Write-Step "Running 'fetch chromium' into $ChromiumDir (first run — this is the big one)"
     Push-Location $ChromiumDir

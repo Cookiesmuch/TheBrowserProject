@@ -59,8 +59,12 @@ if (-not $isElevated) {
     Write-Host "support, and a Defender exclusion. Relaunching elevated..."
     $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"", "-RepoRoot", "`"$RepoRoot`"", "-InstallRoot", "`"$InstallRoot`"")
     if ($SkipBuild) { $argList += "-SkipBuild" }
-    Start-Process pwsh -Verb RunAs -ArgumentList $argList -Wait
-    exit $LASTEXITCODE
+    # Start-Process is a cmdlet, not a native command — it never sets $LASTEXITCODE,
+    # so a caller checking it afterward would see a stale/zero value even when the
+    # elevated child actually failed. Capture the process via -PassThru and use its
+    # real ExitCode instead.
+    $elevatedProc = Start-Process pwsh -Verb RunAs -ArgumentList $argList -Wait -PassThru
+    exit $elevatedProc.ExitCode
 }
 
 Write-Banner "TheBrowserProject Setup Wizard"
@@ -69,6 +73,12 @@ Write-Host "Install root: $InstallRoot  (depot_tools/, chromium/ go here)"
 Write-Host ""
 
 # --- 1. Disk space check -----------------------------------------------------
+# InstallRoot may not exist yet on a fresh machine — Get-Item would fail before
+# bootstrap ever gets a chance to create it. Create it first; it's the wizard's
+# job to manage this directory anyway.
+if (-not (Test-Path $InstallRoot)) {
+    New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
+}
 Write-Step "Checking free disk space on $((Get-Item $InstallRoot).PSDrive.Name):"
 $drive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$((Get-Item $InstallRoot).PSDrive.Name):'"
 $freeGb = [math]::Round($drive.FreeSpace / 1GB, 1)
@@ -125,13 +135,21 @@ if ((git config --system --get core.longpaths) -eq "true") {
     git config --system core.longpaths true
     Write-Ok "set git core.longpaths=true"
 }
-# Defensive: a moved/relocated checkout, or a build service account, can trip git's
-# ownership check. Broad and safe on a single-purpose dev/build machine.
-if ((git config --system --get-all safe.directory 2>$null) -contains "*") {
-    Write-Skip "git safe.directory already trusts everything"
-} else {
-    git config --system --add safe.directory '*'
-    Write-Ok "set git safe.directory=*"
+# Defensive: a moved/relocated checkout, or a build/service account running under
+# a different identity, can trip git's ownership check. Register only the exact
+# paths this wizard manages — not `*`, which would trust every repo on the
+# machine for every user/service, including anything an attacker might drop
+# somewhere unrelated.
+$safeDirs = @($RepoRoot, "$InstallRoot\chromium\src", "$InstallRoot\depot_tools")
+$existingSafeDirs = @(git config --system --get-all safe.directory 2>$null)
+foreach ($dir in $safeDirs) {
+    $gitStyleDir = $dir -replace '\\', '/'
+    if ($existingSafeDirs -contains $gitStyleDir -or $existingSafeDirs -contains $dir) {
+        Write-Skip "git safe.directory already trusts $dir"
+    } else {
+        git config --system --add safe.directory $gitStyleDir
+        Write-Ok "added git safe.directory: $dir"
+    }
 }
 
 # --- 4. Windows Defender exclusion ------------------------------------------

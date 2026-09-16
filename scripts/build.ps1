@@ -52,13 +52,29 @@ if (Test-Path $vswhere) {
 # Also pin the Windows SDK version explicitly. Pinning the VS install alone isn't
 # enough: vcvarsall.bat still picks its own "preferred" SDK version independent of
 # which VS edition is running it, and on a machine with a VS preview/Insiders
-# install alongside VS2022, that preferred version can be a preview SDK
-# (e.g. 10.0.28000.0) that was never actually installed — vcvarsall then reports a
-# nonexistent include path and gn gen fails. vcvarsall.bat honors WindowsSDKVersion
-# if it's already set in the environment, skipping its own auto-detection, so pick
-# the newest SDK version that's actually present under Windows Kits\10\Include.
+# install alongside VS2022, that preferred version can be a preview SDK that was
+# never actually installed — vcvarsall then reports a nonexistent include path
+# and gn gen fails. Derive the EXACT version this pinned Chromium revision
+# requires (same SDK_VERSION constant setup.ps1 reads from setup_toolchain.py),
+# not just whatever's newest installed — a machine with both the required SDK
+# and a newer one present would otherwise silently build against the wrong SDK,
+# defeating the pin and reintroducing the exact mismatch this exists to prevent.
 $sdkRoot = "C:\Program Files (x86)\Windows Kits\10\Include"
-if (Test-Path $sdkRoot) {
+$setupToolchain = Join-Path $ChromiumSrc "build\toolchain\win\setup_toolchain.py"
+$requiredSdk = $null
+if (Test-Path $setupToolchain) {
+    $match = Select-String -Path $setupToolchain -Pattern "^SDK_VERSION\s*=\s*'([\d.]+)'" | Select-Object -First 1
+    if ($match) { $requiredSdk = $match.Matches[0].Groups[1].Value }
+}
+if ($requiredSdk) {
+    $requiredSdkPath = Join-Path $sdkRoot $requiredSdk
+    if (-not (Test-Path $requiredSdkPath)) {
+        throw "Chromium requires Windows SDK $requiredSdk, which isn't installed at $requiredSdkPath. Run scripts\setup.ps1 (or add it manually via the Visual Studio Installer) before building."
+    }
+    $env:WindowsSDKVersion = "$requiredSdk\"
+    Write-Step "Pinned Windows SDK version to $($env:WindowsSDKVersion) (required by this Chromium revision)"
+} elseif (Test-Path $sdkRoot) {
+    Write-Warning "Could not detect the required SDK version from setup_toolchain.py — falling back to newest installed. This may not match what Chromium actually needs."
     $latestSdk = Get-ChildItem $sdkRoot -Directory | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
     if ($latestSdk) {
         $env:WindowsSDKVersion = "$($latestSdk.Name)\"
