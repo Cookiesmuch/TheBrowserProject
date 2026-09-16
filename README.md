@@ -85,16 +85,29 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full patch/overlay workflow.
 ## Developer setup
 
 - Windows 11
-- [`depot_tools`](https://chromium.googlesource.com/chromium/tools/depot_tools.git)
-  (installed automatically by `scripts/bootstrap.ps1`)
 - ~100GB free disk
 - 16GB+ RAM minimum, 32GB+ recommended
-- Visual Studio 2022 Build Tools + Windows SDK (Chromium's documented
-  [Windows build prerequisites](https://chromium.googlesource.com/chromium/src/+/main/docs/windows_build_instructions.md))
+
+Everything else — Visual Studio 2022 + the C++ workload, the exact Windows
+SDK version this Chromium revision needs, Windows long-path support, and a
+Defender exclusion for the checkout — is handled for you:
 
 ```powershell
-.\scripts\bootstrap.ps1       # one-time: installs depot_tools, syncs the pinned revision
-.\scripts\apply-patches.ps1   # copies overlay/, applies patches/
+.\scripts\setup.ps1
+```
+
+This is an interactive wizard (relaunches itself elevated if needed, asks
+before anything slow/expensive like installing VS or starting the ~100GB
+sync) that walks through prerequisites, sync, patches, and the build, then
+smoke-tests the result. Safe to re-run — every step checks current state
+and skips what's already done. Pass `-SkipBuild` to stop after sync/patches
+without committing to the multi-hour compile yet.
+
+Once set up, day-to-day you only need the individual steps directly:
+
+```powershell
+.\scripts\bootstrap.ps1       # re-sync after bumping chromium.version
+.\scripts\apply-patches.ps1   # re-copy overlay/, re-apply patches/ after editing them
 .\scripts\build.ps1           # gn gen + autoninja
 ```
 

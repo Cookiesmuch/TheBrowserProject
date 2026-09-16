@@ -70,7 +70,13 @@ if ($patchFiles.Count -eq 0) {
     try {
         foreach ($patch in $patchFiles) {
             Write-Host "    applying $($patch.Name)"
-            & git apply --whitespace=nowarn $patch.FullName
+            # --3way falls back to a real three-way merge (using the blobs the patch was
+            # generated against) when a plain context-match fails — this matters most
+            # after a chromium.version bump, where upstream may have touched nearby but
+            # non-conflicting lines in the same file. It still fails (with conflict
+            # markers left in the file) on genuine overlapping changes, which is exactly
+            # when a human needs to re-derive the patch by hand.
+            & git apply --whitespace=nowarn --3way $patch.FullName
             if ($LASTEXITCODE -ne 0) {
                 throw "Patch failed to apply cleanly: $($patch.Name). Fix the patch (see scripts/export-patches.ps1) before continuing."
             }

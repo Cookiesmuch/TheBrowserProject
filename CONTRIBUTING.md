@@ -24,10 +24,13 @@ Prerequisites:
 - Windows 11
 - ~100GB free disk (Chromium checkout + build output)
 - 16GB+ RAM minimum, 32GB+ recommended
-- Visual Studio 2022 Build Tools + Windows SDK (see Chromium's own
-  [Windows build instructions](https://chromium.googlesource.com/chromium/src/+/main/docs/windows_build_instructions.md)
-  for exact component list)
 - Git, PowerShell 7+
+
+On a fresh machine, run `.\scripts\setup.ps1` first — an interactive wizard
+that installs Visual Studio 2022 + the C++ workload, the exact Windows SDK
+version the pinned Chromium revision needs, Windows long-path support, and
+a Defender exclusion for the checkout, then runs the steps below itself. It
+checks current state before each step, so it's safe to re-run.
 
 ```powershell
 # One-time (or whenever chromium.version changes): installs depot_tools,

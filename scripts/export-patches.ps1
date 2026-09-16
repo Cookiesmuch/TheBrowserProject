@@ -21,11 +21,16 @@
     `git add <path>`, never `-A` or `-a`, so it can't sweep up unrelated
     dirty state elsewhere in the repo. Does NOT push — that stays a
     separate, explicit step.
+
+    Pass -Description "what and why" to get a real commit message
+    ("patches: 0001-foo.patch — <description>") instead of the bare
+    default ("patches: add/update 0001-foo.patch").
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [string]$PatchName,
+    [string]$Description,
     [string]$RepoRoot = (Resolve-Path "$PSScriptRoot\..").Path,
     [string]$ChromiumSrc = "$((Resolve-Path "$PSScriptRoot\..").Path)\chromium\src"
 )
@@ -75,7 +80,8 @@ try {
     git add -- $relPath
     if ($LASTEXITCODE -ne 0) { throw "git add failed for $relPath (exit $LASTEXITCODE)" }
 
-    git commit -m "patches: add/update $PatchName" -- $relPath
+    $commitMsg = if ($Description) { "patches: $PatchName — $Description" } else { "patches: add/update $PatchName" }
+    git commit -m $commitMsg -- $relPath
     if ($LASTEXITCODE -ne 0) { throw "git commit failed for $relPath (exit $LASTEXITCODE)" }
 
     Write-Host "==> Committed $relPath in $RepoRoot (not pushed — push manually when ready)" -ForegroundColor Green
