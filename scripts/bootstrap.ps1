@@ -28,14 +28,17 @@ $pinnedTag = (Get-Content $versionFile -Raw).Trim()
 Write-Step "Pinned Chromium version: $pinnedTag"
 
 # --- depot_tools ---
+# depot_tools manages its own revision (its own tooling checks it out to a pinned
+# commit, so it's often in detached HEAD — a plain `git pull` fails there with
+# "You are not currently on a branch"). Every depot_tools command (gclient, fetch,
+# etc.) already self-updates on invocation unless DEPOT_TOOLS_UPDATE=0, so we only
+# need to clone it once and otherwise leave it alone.
 if (-not (Test-Path $DepotToolsDir)) {
     Write-Step "Cloning depot_tools into $DepotToolsDir"
     git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git $DepotToolsDir
     if ($LASTEXITCODE -ne 0) { throw "git clone of depot_tools failed (exit $LASTEXITCODE)" }
 } else {
-    Write-Step "Updating existing depot_tools in $DepotToolsDir"
-    git -C $DepotToolsDir pull --ff-only
-    if ($LASTEXITCODE -ne 0) { throw "git pull in depot_tools failed (exit $LASTEXITCODE)" }
+    Write-Step "depot_tools already present at $DepotToolsDir (self-updates on use)"
 }
 
 $env:PATH = "$DepotToolsDir;$env:PATH"
@@ -80,12 +83,19 @@ try {
     # A prior CI/local run may have left patches applied (tracked-file edits) and
     # overlay files copied in (untracked). Discard both so apply-patches.ps1 always
     # starts from a pristine pinned tree — otherwise reapplying an already-applied
-    # patch fails, and deleted overlay files linger. This intentionally does NOT
-    # touch out/ (build output) or third_party/ caches, since -e only excludes
-    # explicit paths and out/ isn't tracked/patched — see git clean excludes below.
+    # patch fails, and deleted overlay files linger.
     git reset --hard $pinnedCommit
     if ($LASTEXITCODE -ne 0) { throw "git reset --hard failed (exit $LASTEXITCODE)" }
-    git clean -ffd -e out -e out/Release
+    # Single -f only: third_party/* dependencies are each their own nested git
+    # checkout (gclient-managed, not tracked by src's own git index). A double -f
+    # (-ffd) forces git clean to descend into and wipe those nested repos too,
+    # which forces gclient sync to redownload every one of ~100 dependencies from
+    # scratch on every single rerun — this is what was hammering
+    # chromium.googlesource.com into HTTP 429 rate-limiting across our last few
+    # runs. Single -f leaves nested repos alone and only removes stray untracked
+    # files directly in src/ (like leftover overlay copies), which is all that's
+    # actually needed here.
+    git clean -fd -e out -e out/Release
     if ($LASTEXITCODE -ne 0) { throw "git clean failed (exit $LASTEXITCODE)" }
 
     Write-Step "Running gclient sync (incremental after first run)"
