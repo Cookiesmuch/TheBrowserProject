@@ -49,6 +49,27 @@ if (Test-Path $vswhere) {
     Write-Warning "vswhere.exe not found at expected path — cannot pin VS2022 toolchain explicitly."
 }
 
+# Also pin the Windows SDK version explicitly. Pinning the VS install alone isn't
+# enough: vcvarsall.bat still picks its own "preferred" SDK version independent of
+# which VS edition is running it, and on a machine with a VS preview/Insiders
+# install alongside VS2022, that preferred version can be a preview SDK
+# (e.g. 10.0.28000.0) that was never actually installed — vcvarsall then reports a
+# nonexistent include path and gn gen fails. vcvarsall.bat honors WindowsSDKVersion
+# if it's already set in the environment, skipping its own auto-detection, so pick
+# the newest SDK version that's actually present under Windows Kits\10\Include.
+$sdkRoot = "C:\Program Files (x86)\Windows Kits\10\Include"
+if (Test-Path $sdkRoot) {
+    $latestSdk = Get-ChildItem $sdkRoot -Directory | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+    if ($latestSdk) {
+        $env:WindowsSDKVersion = "$($latestSdk.Name)\"
+        Write-Step "Pinned Windows SDK version to $($env:WindowsSDKVersion)"
+    } else {
+        Write-Warning "No installed Windows SDK version found under $sdkRoot — gn gen may fail."
+    }
+} else {
+    Write-Warning "Windows Kits Include dir not found at $sdkRoot — cannot pin SDK version explicitly."
+}
+
 $argsTemplate = Join-Path $RepoRoot "args.gn.template"
 if (-not (Test-Path $argsTemplate)) {
     throw "args.gn.template not found at $argsTemplate"
