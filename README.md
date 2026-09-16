@@ -98,7 +98,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full patch/overlay workflow.
 .\scripts\build.ps1           # gn gen + autoninja
 ```
 
-Binary lands at `chromium/src/out/Release/chrome.exe`.
+Binary lands at `chromium/src/out/Release/TheBrowserProject.exe`.
 
 ## Getting a build to test
 

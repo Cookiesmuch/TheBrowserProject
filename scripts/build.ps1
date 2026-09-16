@@ -89,7 +89,14 @@ try {
     & autoninja -C $OutDir $Target
     if ($LASTEXITCODE -ne 0) { throw "autoninja build failed" }
 
-    Write-Step "Build complete: $outPath\$Target.exe"
+    # The internal GN target/binary stays named "chrome" (chrome.exe) — renaming that
+    # would ripple into installer/packaging/test scripts across the tree that reference
+    # it by name. Branding (About page, window title, installer strings) is handled
+    # properly via patches/0001-rebrand-to-thebrowserproject.patch instead. This copy
+    # just gives us the product-facing binary name for what we actually ship.
+    $brandedExe = Join-Path $outPath "TheBrowserProject.exe"
+    Copy-Item (Join-Path $outPath "$Target.exe") $brandedExe -Force
+    Write-Step "Build complete: $outPath\$Target.exe (also copied as $brandedExe)"
 } finally {
     Pop-Location
 }

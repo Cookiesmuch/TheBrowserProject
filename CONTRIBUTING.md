@@ -41,7 +41,7 @@ Prerequisites:
 .\scripts\build.ps1
 ```
 
-The resulting binary is at `chromium/src/out/Release/chrome.exe`.
+The resulting binary is at `chromium/src/out/Release/TheBrowserProject.exe` (the underlying GN target and object files remain named `chrome`/`chrome.exe` internally — see `patches/0001-rebrand-to-thebrowserproject.patch` and `scripts/build.ps1` for how branding and the shipped binary name are handled without renaming the internal build target).
 
 ## Adding or updating a patch
 

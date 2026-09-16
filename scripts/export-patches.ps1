@@ -13,6 +13,14 @@
     patch — instead of the whole cumulative series. Run apply-patches.ps1
     first (on a fresh bootstrap) so HEAD reflects the existing series
     before you start hand-editing.
+
+    Auto-commits the resulting patch file into the outer repo (this repo,
+    not the chromium/src checkout) so an exported patch can never sit
+    around un-tracked and forgotten — a real gap that happened once before
+    this was added. The commit is scoped to exactly the one patch file via
+    `git add <path>`, never `-A` or `-a`, so it can't sweep up unrelated
+    dirty state elsewhere in the repo. Does NOT push — that stays a
+    separate, explicit step.
 #>
 [CmdletBinding()]
 param(
@@ -55,7 +63,22 @@ try {
 if ((Get-Item $outFile).Length -eq 0) {
     Remove-Item $outFile
     Write-Warning "No changes detected in $ChromiumSrc — nothing written."
-} else {
-    Write-Host "==> Wrote $outFile" -ForegroundColor Green
-    Write-Host "    Remember to also copy any wholesale NEW files into overlay/ instead of patches/."
+    exit 0
+}
+
+Write-Host "==> Wrote $outFile" -ForegroundColor Green
+Write-Host "    Remember to also copy any wholesale NEW files into overlay/ instead of patches/."
+
+Push-Location $RepoRoot
+try {
+    $relPath = "patches/$PatchName"
+    git add -- $relPath
+    if ($LASTEXITCODE -ne 0) { throw "git add failed for $relPath (exit $LASTEXITCODE)" }
+
+    git commit -m "patches: add/update $PatchName" -- $relPath
+    if ($LASTEXITCODE -ne 0) { throw "git commit failed for $relPath (exit $LASTEXITCODE)" }
+
+    Write-Host "==> Committed $relPath in $RepoRoot (not pushed — push manually when ready)" -ForegroundColor Green
+} finally {
+    Pop-Location
 }

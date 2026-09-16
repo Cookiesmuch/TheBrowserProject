@@ -37,11 +37,11 @@ jobs:
         shell: pwsh
         run: ./scripts/build.ps1
 
-      - name: Smoke test — chrome.exe launches and exits cleanly
+      - name: Smoke test — TheBrowserProject.exe launches and exits cleanly
         shell: pwsh
         run: |
-          $chrome = "chromium/src/out/Release/chrome.exe"
-          if (-not (Test-Path $chrome)) { throw "chrome.exe not found at $chrome" }
-          & $chrome --headless --disable-gpu --dump-dom "about:blank" | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "chrome.exe exited with code $LASTEXITCODE" }
-          Write-Host "chrome.exe launched and exited cleanly"
+          $exe = "chromium/src/out/Release/TheBrowserProject.exe"
+          if (-not (Test-Path $exe)) { throw "TheBrowserProject.exe not found at $exe" }
+          & $exe --headless --disable-gpu --dump-dom "about:blank" | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "TheBrowserProject.exe exited with code $LASTEXITCODE" }
+          Write-Host "TheBrowserProject.exe launched and exited cleanly"
