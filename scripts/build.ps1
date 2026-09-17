@@ -173,14 +173,18 @@ try {
     # adds -j core-count tuning, which GN already bakes into the generated
     # .siso_config for this machine (see gn_logs:cpu_count etc. in that file), so
     # nothing meaningful is lost by skipping the wrapper.
-    $sisoPath = Join-Path $ChromiumSrc "third_party\siso\cipd\siso.exe"
-    if (-not (Test-Path $sisoPath)) { throw "siso.exe not found at $sisoPath" }
-    # siso itself needs the real, dereferenced path — see Resolve-RealPath above.
-    # This does not touch any cache file; it only changes the -C argument siso is
-    # invoked with, so this build resumes from whatever's already in .siso_deps /
-    # .siso_fs_state exactly as before.
+    $sisoPathViaJunction = Join-Path $ChromiumSrc "third_party\siso\cipd\siso.exe"
+    if (-not (Test-Path $sisoPathViaJunction)) { throw "siso.exe not found at $sisoPathViaJunction" }
+    # siso's own broken path-walking is almost certainly based on its own binary
+    # path (os.Executable() in Go), not just its working directory — resolving
+    # only the -C argument (previous attempt) and leaving the binary itself
+    # invoked via the junction still failed identically. Resolve both. This does
+    # not touch any cache file; it only changes which literal path strings siso
+    # is invoked with, so this build resumes from whatever's already in
+    # .siso_deps / .siso_fs_state exactly as before.
+    $sisoPath = Resolve-RealPath $sisoPathViaJunction
     $realOutPath = Resolve-RealPath $outPath
-    Write-Step "siso ninja -C $realOutPath $Target"
+    Write-Step "siso ninja -C $realOutPath $Target (via $sisoPath)"
     & $sisoPath ninja -C $realOutPath $Target
     if ($LASTEXITCODE -ne 0) { throw "siso build failed" }
 
