@@ -15,13 +15,20 @@ source_set("tbp_download") {
   sources = [
     "tbp_chunk_scheduler.cc",
     "tbp_chunk_scheduler.h",
+    "tbp_disk_writer.h",
+    "torrent/tbp_bencode.cc",
+    "torrent/tbp_bencode.h",
   ]
 
-  # Intentionally dependency-free for now. tbp_chunk_scheduler is pure policy
-  # with no I/O, no network and no threading, which is what lets it be tested
-  # exhaustively without a fixture. Later pieces of the engine (the disk writer,
-  # the chunk workers, the egress pool) will add //base and //net here.
-  deps = []
+  deps = [ "//base" ]
+
+  # The disk writer is Win32 all the way down — unbuffered handles, volume
+  # sector geometry, SeManageVolumePrivilege. There is no portable subset worth
+  # abstracting, and this browser targets Windows, so the implementation is
+  # simply Windows-only rather than hidden behind a shim.
+  if (is_win) {
+    sources += [ "tbp_disk_writer_win.cc" ]
+  }
 }
 
 # A dedicated test binary rather than folding these into components_unittests.
@@ -32,11 +39,20 @@ source_set("tbp_download") {
 # also means Phase 0 needs *zero* patches to Chromium's own files: this target is
 # built directly by label rather than being registered in an upstream deps list.
 test("tbp_download_unittests") {
-  sources = [ "tbp_chunk_scheduler_unittest.cc" ]
+  sources = [
+    "tbp_chunk_scheduler_unittest.cc",
+    "torrent/tbp_bencode_unittest.cc",
+  ]
+
+  if (is_win) {
+    sources += [ "tbp_disk_writer_unittest.cc" ]
+  }
 
   deps = [
     ":tbp_download",
+    "//base",
     "//base/test:run_all_unittests",
+    "//base/test:test_support",
     "//testing/gtest",
   ]
 }
