@@ -1,0 +1,42 @@
+# Copyright 2026 The TheBrowserProject Contributors
+# Use of this source code is governed by an MIT-style license that can be
+# found in the LICENSE file.
+
+import("//testing/test.gni")
+
+# TheBrowserProject's in-house download engine.
+#
+# This is a standalone engine, deliberately independent of //components/download
+# (Chromium's own download stack). It owns its task model, scheduling, disk
+# writes and persistence; Chromium supplies only the HTTP/TLS transport via
+# //net and the threading primitives from //base.
+
+source_set("tbp_download") {
+  sources = [
+    "tbp_chunk_scheduler.cc",
+    "tbp_chunk_scheduler.h",
+  ]
+
+  # Intentionally dependency-free for now. tbp_chunk_scheduler is pure policy
+  # with no I/O, no network and no threading, which is what lets it be tested
+  # exhaustively without a fixture. Later pieces of the engine (the disk writer,
+  # the chunk workers, the egress pool) will add //base and //net here.
+  deps = []
+}
+
+# A dedicated test binary rather than folding these into components_unittests.
+#
+# components_unittests is a ~2000-target build that pulls in most of //components
+# and much of //content. Our tests have no reason to wait on any of that, and CI
+# runs them on every push, so a small standalone binary keeps that loop cheap. It
+# also means Phase 0 needs *zero* patches to Chromium's own files: this target is
+# built directly by label rather than being registered in an upstream deps list.
+test("tbp_download_unittests") {
+  sources = [ "tbp_chunk_scheduler_unittest.cc" ]
+
+  deps = [
+    ":tbp_download",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}

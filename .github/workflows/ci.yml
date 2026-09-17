@@ -37,6 +37,10 @@ jobs:
         shell: pwsh
         run: ./scripts/build.ps1
 
+      - name: Unit tests — TheBrowserProject's own code
+        shell: pwsh
+        run: ./scripts/run-unit-tests.ps1
+
       - name: Smoke test — TheBrowserProject.exe launches and exits cleanly
         shell: pwsh
         run: |
