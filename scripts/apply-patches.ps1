@@ -24,6 +24,7 @@ $ErrorActionPreference = "Stop"
 
 # See bootstrap.ps1 — process-local, doesn't carry over between CI steps.
 $env:GIT_TERMINAL_PROMPT = "0"
+$env:GCM_INTERACTIVE = "Never"
 
 function Write-Step($msg) {
     Write-Host "==> $msg" -ForegroundColor Cyan
