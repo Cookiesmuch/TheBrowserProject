@@ -13,11 +13,14 @@ import("//testing/test.gni")
 
 source_set("tbp_download") {
   sources = [
+    "tbp_chunk_fetcher.h",
     "tbp_chunk_scheduler.cc",
     "tbp_chunk_scheduler.h",
     "tbp_disk_writer.h",
     "tbp_download_state.cc",
     "tbp_download_state.h",
+    "tbp_sector_aligned_writer.cc",
+    "tbp_sector_aligned_writer.h",
     "torrent/tbp_bencode.cc",
     "torrent/tbp_bencode.h",
     "torrent/tbp_torrent_metadata.cc",
@@ -52,7 +55,10 @@ test("tbp_download_unittests") {
   ]
 
   if (is_win) {
-    sources += [ "tbp_disk_writer_unittest.cc" ]
+    sources += [
+      "tbp_disk_writer_unittest.cc",
+      "tbp_sector_aligned_writer_unittest.cc",
+    ]
   }
 
   deps = [
