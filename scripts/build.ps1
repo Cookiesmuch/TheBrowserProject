@@ -21,41 +21,10 @@ function Write-Step($msg) {
     Write-Host "==> $msg" -ForegroundColor Cyan
 }
 
-# Walks $Path component by component and substitutes any NTFS junction with its
-# real target, recursing to handle nested junctions. Filesystem access through a
-# junction works fine for normal file I/O (git, gn gen etc. have no issue with
-# it), but siso.exe's own internal Go path-walking (used for its CIPD
-# version/self-identification logic, exercised on every invocation including a
-# bare `siso version`) breaks through one and fails instantly with a bare
-# "The system cannot find the path specified." Confirmed directly: the identical
-# `siso ninja` invocation failed at 0.00s through the junctioned checkout path
-# (C:\actions-runner\TheBrowserProject -> junction -> V:\git\.runner\...) but ran
-# normally — actually compiling — given the real V:\ path instead. Only siso's
-# own invocation needs the dereferenced path; everything else in this script can
-# keep using the junctioned $RepoRoot/$ChromiumSrc as before.
-function Resolve-RealPath([string]$Path) {
-    $full = [System.IO.Path]::GetFullPath($Path)
-    $root = [System.IO.Path]::GetPathRoot($full)
-    $relParts = $full.Substring($root.Length).Split([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar) | Where-Object { $_ }
-    $current = $root.TrimEnd('\', '/')
-    for ($i = 0; $i -lt $relParts.Length; $i++) {
-        $current = Join-Path $current $relParts[$i]
-        if (Test-Path $current) {
-            $item = Get-Item $current -Force -ErrorAction SilentlyContinue
-            if ($item -and $item.LinkType -eq "Junction" -and $item.Target) {
-                $target = $item.Target
-                if ($target -is [array]) { $target = $target[0] }
-                $resolved = $target
-                if ($i + 1 -le $relParts.Length - 1) {
-                    $remainder = ($relParts[($i + 1)..($relParts.Length - 1)] -join [System.IO.Path]::DirectorySeparatorChar)
-                    $resolved = Join-Path $target $remainder
-                }
-                return Resolve-RealPath $resolved
-            }
-        }
-    }
-    return $current
-}
+# Resolve-RealPath dereferences NTFS junctions. siso.exe needs it (its internal
+# Go path-walking breaks through a junction); nothing else in this script does.
+# Shared with run-unit-tests.ps1 — see the lib file for the full explanation.
+. (Join-Path $PSScriptRoot "lib\Resolve-RealPath.ps1")
 
 if (-not (Test-Path $ChromiumSrc)) {
     throw "Chromium checkout not found at $ChromiumSrc — run bootstrap.ps1 first"

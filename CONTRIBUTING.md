@@ -77,10 +77,32 @@ The resulting binary is at `chromium/src/out/Release/TheBrowserProject.exe` (the
 - New patches are numbered and ordered correctly; new standalone files live
   under `overlay/`, not squeezed into a patch.
 
-`.github/workflows/ci.yml` re-checks all of this on our self-hosted runner
-on every push to `main` and every pull request — so a direct push to a
-feature branch does **not** produce the required `ci` status check; open a
-PR for that. `.github/workflows/release.yml` builds and publishes a rolling
+### When CI runs (and why it isn't on every push)
+
+`.github/workflows/ci.yml` re-checks all of this on our self-hosted runner,
+but a full Chromium build takes tens of minutes, so it deliberately does
+**not** run on every push to a PR branch. Doing so meant every intermediate
+commit queued another whole build and made iterating on a PR miserable.
+
+**Recommended flow: open the PR as a draft**, push as often as you like with
+no builds, then trigger CI once when the change is actually a merge
+candidate. `main` requires the `ci` check to pass before merging, so trigger
+it by any of:
+
+| How | When to use it |
+| --- | --- |
+| Mark a draft PR **Ready for review** | The normal path — the natural "done iterating" signal |
+| Add the **`run-ci`** label to the PR | Want the check while still a draft |
+| `gh workflow run ci.yml --ref <branch>` | Ad-hoc, or re-running after a flake |
+
+Pushing more commits after CI has run does not re-trigger it; re-label or
+re-dispatch when you want a fresh check.
+
+Local iteration should not wait on CI at all: `scripts/run-unit-tests.ps1`
+builds and runs our own test binaries in well under two minutes once the
+tree is built, which catches most problems long before CI would.
+
+`.github/workflows/release.yml` builds and publishes a rolling
 `latest` prerelease whenever a PR actually merges into `main` — this is an
 interim placeholder for grabbing a runnable build (see
 [#13](https://github.com/Cookiesmuch/TheBrowserProject/issues/13) for the

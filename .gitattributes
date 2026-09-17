@@ -1,0 +1,25 @@
+# Patch files must never be line-ending converted.
+#
+# `git apply` matches a patch's context lines byte-for-byte against the target
+# file. The Chromium checkout is LF, so if core.autocrlf rewrites a .patch to
+# CRLF on checkout — the Windows default, and the setting inherited by this
+# project's self-hosted CI runner — every context line gains a trailing \r and
+# the patch silently stops applying. That made patch success depend on each
+# machine's local git config, which is exactly the kind of thing that works for
+# whoever authored it and breaks in CI.
+#
+# -text disables all EOL conversion in both directions, keeping patches
+# byte-identical everywhere.
+*.patch -text
+
+# Our overlay sources sit inside the Chromium tree and should match it (LF),
+# regardless of what the checking-out machine's autocrlf says.
+*.cc   text eol=lf
+*.h    text eol=lf
+*.gn   text eol=lf
+*.gni  text eol=lf
+
+# Repo-level files. PowerShell keeps CRLF, the Windows convention.
+*.ps1  text eol=crlf
+*.md   text eol=lf
+*.yml  text eol=lf
