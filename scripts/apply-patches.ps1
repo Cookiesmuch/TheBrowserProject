@@ -122,12 +122,35 @@ if ($patchFiles.Count -eq 0) {
         foreach ($patch in $patchFiles) {
             Write-Host "    applying $($patch.Name)"
 
+            # Apply from a CRLF-normalized copy, never the file as it sits on disk.
+            #
+            # `git apply` matches context lines byte-for-byte against the target.
+            # The Chromium tree is LF, so a patch whose own line terminators got
+            # converted to CRLF fails on every hunk with a bare "patch does not
+            # apply". That conversion is the Windows git default (core.autocrlf),
+            # and .gitattributes only protects files git actually rewrites — a
+            # checkout that reuses an existing working tree can leave an older,
+            # already-converted copy in place. Normalizing here makes patch
+            # application independent of how any given machine checked the repo
+            # out, which is what CI failing on exactly this taught us.
+            #
+            # Safe because every patch here targets the Chromium tree, which is
+            # uniformly LF; a patch that legitimately needed to add CR-terminated
+            # content would need different handling.
+            $normalizedPatch = Join-Path ([System.IO.Path]::GetTempPath()) "tbp-$($patch.BaseName)-$PID.patch"
+            $patchBytes = [System.IO.File]::ReadAllBytes($patch.FullName)
+            $patchText = [System.Text.Encoding]::UTF8.GetString($patchBytes) -replace "`r`n", "`n"
+            # Write without a BOM; git apply will not parse a patch that starts with one.
+            [System.IO.File]::WriteAllText($normalizedPatch, $patchText,
+                                           (New-Object System.Text.UTF8Encoding($false)))
+
             # Get exactly which files this patch touches before applying, so the
             # commit afterward stages only those — not `-A`, which could sweep up
             # unrelated dirty state.
-            $numstat = & git apply --numstat $patch.FullName
+            $numstat = & git apply --numstat $normalizedPatch
             $patchPaths = @($numstat | ForEach-Object { ($_ -split "`t")[2] } | Where-Object { $_ })
             if ($patchPaths.Count -eq 0) {
+                Remove-Item $normalizedPatch -Force -ErrorAction SilentlyContinue
                 throw "Could not determine which files $($patch.Name) touches (git apply --numstat returned nothing) — refusing to apply."
             }
 
@@ -137,8 +160,10 @@ if ($patchFiles.Count -eq 0) {
             # non-conflicting lines in the same file. It still fails (with conflict
             # markers left in the file) on genuine overlapping changes, which is exactly
             # when a human needs to re-derive the patch by hand.
-            & git apply --whitespace=nowarn --3way $patch.FullName
-            if ($LASTEXITCODE -ne 0) {
+            & git apply --whitespace=nowarn --3way $normalizedPatch
+            $applyExit = $LASTEXITCODE
+            Remove-Item $normalizedPatch -Force -ErrorAction SilentlyContinue
+            if ($applyExit -ne 0) {
                 throw "Patch failed to apply cleanly: $($patch.Name). Fix the patch (see scripts/export-patches.ps1) before continuing."
             }
             Invoke-GitCommit "patch: $($patch.Name)" $patchPaths
