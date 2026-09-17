@@ -16,6 +16,8 @@ source_set("tbp_download") {
     "tbp_chunk_scheduler.cc",
     "tbp_chunk_scheduler.h",
     "tbp_disk_writer.h",
+    "tbp_download_state.cc",
+    "tbp_download_state.h",
     "torrent/tbp_bencode.cc",
     "torrent/tbp_bencode.h",
     "torrent/tbp_torrent_metadata.cc",
@@ -44,6 +46,7 @@ source_set("tbp_download") {
 test("tbp_download_unittests") {
   sources = [
     "tbp_chunk_scheduler_unittest.cc",
+    "tbp_download_state_unittest.cc",
     "torrent/tbp_bencode_unittest.cc",
     "torrent/tbp_torrent_metadata_unittest.cc",
   ]
