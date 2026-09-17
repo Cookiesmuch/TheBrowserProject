@@ -18,6 +18,8 @@ source_set("tbp_download") {
     "tbp_disk_writer.h",
     "torrent/tbp_bencode.cc",
     "torrent/tbp_bencode.h",
+    "torrent/tbp_torrent_metadata.cc",
+    "torrent/tbp_torrent_metadata.h",
   ]
 
   deps = [ "//base" ]
@@ -34,14 +36,16 @@ source_set("tbp_download") {
 # A dedicated test binary rather than folding these into components_unittests.
 #
 # components_unittests is a ~2000-target build that pulls in most of //components
-# and much of //content. Our tests have no reason to wait on any of that, and CI
-# runs them on every push, so a small standalone binary keeps that loop cheap. It
-# also means Phase 0 needs *zero* patches to Chromium's own files: this target is
-# built directly by label rather than being registered in an upstream deps list.
+# and much of //content. Our tests have no reason to wait on any of that, so a
+# small standalone binary keeps the local verification loop cheap (CI itself now
+# only runs on merge candidates, not every push — see ci.yml). It also means
+# Phase 0 needs *zero* patches to Chromium's own files: this target is built
+# directly by label rather than being registered in an upstream deps list.
 test("tbp_download_unittests") {
   sources = [
     "tbp_chunk_scheduler_unittest.cc",
     "torrent/tbp_bencode_unittest.cc",
+    "torrent/tbp_torrent_metadata_unittest.cc",
   ]
 
   if (is_win) {
