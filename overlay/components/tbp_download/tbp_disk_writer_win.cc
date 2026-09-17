@@ -153,7 +153,9 @@ int64_t DiskWriter::QuerySectorSize(const base::FilePath& path) {
   return static_cast<int64_t>(bytes_per_sector);
 }
 
-bool DiskWriter::Open(const base::FilePath& path, int64_t total_size) {
+bool DiskWriter::Open(const base::FilePath& path,
+                       int64_t total_size,
+                       bool preserve_existing_content) {
   Close();
   finished_ = false;
   used_fast_preallocation_ = false;
@@ -165,9 +167,20 @@ bool DiskWriter::Open(const base::FilePath& path, int64_t total_size) {
     return false;
   }
 
+  // CREATE_ALWAYS truncates any existing file -- correct for a normal fresh
+  // download, but exactly the bug that would silently destroy a resumed
+  // download's already-written bytes. OPEN_EXISTING is used only when the
+  // caller explicitly asked to preserve content AND a file is actually
+  // there; falling back to CREATE_ALWAYS if it isn't handles a resume
+  // attempted after the destination was deleted out from under it.
+  DWORD disposition = CREATE_ALWAYS;
+  if (preserve_existing_content && base::PathExists(path)) {
+    disposition = OPEN_EXISTING;
+  }
+
   HANDLE handle = ::CreateFileW(
       path.value().c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ,
-      nullptr, CREATE_ALWAYS,
+      nullptr, disposition,
       FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH | FILE_ATTRIBUTE_NORMAL,
       nullptr);
   if (handle == INVALID_HANDLE_VALUE) {

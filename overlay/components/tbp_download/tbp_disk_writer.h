@@ -87,7 +87,17 @@ class DiskWriter {
   //
   // Pass kUnknownTotalSize when the length is not known ahead of time; the file
   // is then created without reservation and simply grows.
-  bool Open(const base::FilePath& path, int64_t total_size);
+  //
+  // Pass `preserve_existing_content = true` when resuming a download whose
+  // destination file already holds real, previously-written bytes that must
+  // not be discarded -- e.g. after a resume from persisted DownloadState.
+  // This opens an existing file in place instead of truncating it; if no
+  // file exists yet at `path`, it is created fresh exactly as when this is
+  // false. Getting this wrong silently destroys a resume's whole point, so
+  // it is an explicit, named argument rather than inferred from context.
+  bool Open(const base::FilePath& path,
+            int64_t total_size,
+            bool preserve_existing_content = false);
 
   // Writes `data` at `offset`.
   //

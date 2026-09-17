@@ -19,6 +19,8 @@ source_set("tbp_download") {
     "tbp_disk_writer.h",
     "tbp_download_state.cc",
     "tbp_download_state.h",
+    "tbp_download_task.cc",
+    "tbp_download_task.h",
     "tbp_sector_aligned_writer.cc",
     "tbp_sector_aligned_writer.h",
     "torrent/tbp_bencode.cc",
@@ -57,6 +59,7 @@ test("tbp_download_unittests") {
   if (is_win) {
     sources += [
       "tbp_disk_writer_unittest.cc",
+      "tbp_download_task_unittest.cc",
       "tbp_sector_aligned_writer_unittest.cc",
     ]
   }
