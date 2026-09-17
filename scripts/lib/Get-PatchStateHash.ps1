@@ -26,7 +26,18 @@ function Get-PatchStateHash {
     try {
         $writer = New-Object System.IO.BinaryWriter($ms)
 
-        $writer.Write([System.IO.File]::ReadAllBytes($VersionFile))
+        # BinaryWriter.Write(byte[]) dumps raw bytes with no length prefix, so
+        # naively concatenating variable-length fields back to back is not
+        # self-delimiting — e.g. path "a" + content "b" produces the identical
+        # byte sequence as path "ab" + content "" (Copilot review finding).
+        # Write an explicit length prefix before every variable-length field so
+        # each one is unambiguous regardless of what's next to it.
+        function Write-LengthPrefixed([System.IO.BinaryWriter]$W, [byte[]]$Bytes) {
+            $W.Write([int]$Bytes.Length)
+            $W.Write($Bytes)
+        }
+
+        Write-LengthPrefixed $writer ([System.IO.File]::ReadAllBytes($VersionFile))
 
         if (Test-Path $OverlayDir) {
             $overlayFiles = Get-ChildItem -Path $OverlayDir -Recurse -File |
@@ -34,16 +45,16 @@ function Get-PatchStateHash {
                 Sort-Object FullName
             foreach ($f in $overlayFiles) {
                 $relPath = $f.FullName.Substring($OverlayDir.Length).TrimStart('\', '/')
-                $writer.Write([System.Text.Encoding]::UTF8.GetBytes($relPath))
-                $writer.Write([System.IO.File]::ReadAllBytes($f.FullName))
+                Write-LengthPrefixed $writer ([System.Text.Encoding]::UTF8.GetBytes($relPath))
+                Write-LengthPrefixed $writer ([System.IO.File]::ReadAllBytes($f.FullName))
             }
         }
 
         if (Test-Path $PatchesDir) {
             $patchFiles = Get-ChildItem -Path $PatchesDir -Filter "*.patch" | Sort-Object Name
             foreach ($f in $patchFiles) {
-                $writer.Write([System.Text.Encoding]::UTF8.GetBytes($f.Name))
-                $writer.Write([System.IO.File]::ReadAllBytes($f.FullName))
+                Write-LengthPrefixed $writer ([System.Text.Encoding]::UTF8.GetBytes($f.Name))
+                Write-LengthPrefixed $writer ([System.IO.File]::ReadAllBytes($f.FullName))
             }
         }
 

@@ -34,14 +34,41 @@ if (-not (Test-Path $ChromiumSrc)) {
     throw "Chromium checkout not found at $ChromiumSrc — run bootstrap.ps1 first"
 }
 
+# Refuse to start if a TRACKED file is already modified going in. This is a
+# sanity check that the tree is in a known-good state — either pristine (fresh
+# from bootstrap.ps1's reset) or exactly the fully-patched-and-committed state a
+# prior successful run left behind. Deliberately ignores untracked entries
+# ("??"): a real Chromium checkout normally has untracked nested-repo
+# directories from third_party/ (not registered as formal git submodules), and
+# flagging those would refuse to run on every single checkout. The actual risk
+# Copilot's review flagged — `git add -A` sweeping up unrelated state — is now
+# handled by staging exact paths below instead, so this check doesn't need to
+# be the only line of defense.
+#
+# Checked BEFORE the skip check below (issue #12), not after: a matching stamp
+# only proves this exact hash was successfully applied at some point in the
+# past, not that nothing has touched the tree since. Honoring the stamp without
+# this check first would let an unexpectedly dirty tree slip through silently
+# whenever the stamp happened to still match.
+Push-Location $ChromiumSrc
+try {
+    $trackedDirty = git status --porcelain | Where-Object { -not $_.StartsWith("??") }
+    if ($trackedDirty) {
+        throw "Chromium checkout at $ChromiumSrc has modified tracked files already — refusing to start (would risk committing unrelated changes). Run bootstrap.ps1 to reset it, or investigate manually.`n$trackedDirty"
+    }
+} finally {
+    Pop-Location
+}
+
 # --- skip check (issue #12) ---
 # Mirrors bootstrap.ps1's skip check against the same stamp file: if
 # chromium.version + patches/ + overlay/ hash the same as what's already
-# recorded there, this tree is already fully patched and committed (or
-# bootstrap.ps1 already decided as much and left it alone) — copying overlay
-# files and reapplying + recommitting every patch again would be a no-op that
-# still rewrites file mtimes across the tree, defeating ninja's incremental
-# cache for nothing. Skip straight to done.
+# recorded there, and the tracked-dirty check above just confirmed the tree
+# hasn't been touched since, this tree is already fully patched and committed
+# (or bootstrap.ps1 already decided as much and left it alone) — copying
+# overlay files and reapplying + recommitting every patch again would be a
+# no-op that still rewrites file mtimes across the tree, defeating ninja's
+# incremental cache for nothing. Skip straight to done.
 . (Join-Path $PSScriptRoot "lib\Get-PatchStateHash.ps1")
 $versionFile = Join-Path $RepoRoot "chromium.version"
 $overlayDir = Join-Path $RepoRoot "overlay"
@@ -52,26 +79,6 @@ $stampFile = Join-Path (Split-Path $ChromiumSrc -Parent) ".tbp_stamp"
 if ((Test-Path $stampFile) -and ((Get-Content $stampFile -Raw).Trim() -eq $desiredHash)) {
     Write-Step "patches/ + overlay/ + chromium.version unchanged since the last successful apply on this runner — skipping reapply (tree already correctly patched, mtimes preserved)"
     exit 0
-}
-
-# Refuse to start if a TRACKED file is already modified going in. This is a
-# sanity check that bootstrap.ps1's reset actually left a clean tree — if it
-# didn't, something unexpected happened and a human needs to look, rather than
-# silently proceeding. Deliberately ignores untracked entries ("??"): a real
-# Chromium checkout normally has untracked nested-repo directories from
-# third_party/ (not registered as formal git submodules), and flagging those
-# would refuse to run on every single checkout. The actual risk Copilot's
-# review flagged — `git add -A` sweeping up unrelated state — is now handled
-# by staging exact paths below instead, so this check doesn't need to be the
-# only line of defense.
-Push-Location $ChromiumSrc
-try {
-    $trackedDirty = git status --porcelain | Where-Object { -not $_.StartsWith("??") }
-    if ($trackedDirty) {
-        throw "Chromium checkout at $ChromiumSrc has modified tracked files already — refusing to start (would risk committing unrelated changes). Run bootstrap.ps1 to reset it, or investigate manually.`n$trackedDirty"
-    }
-} finally {
-    Pop-Location
 }
 
 function Invoke-GitCommit($message, [string[]]$Paths) {

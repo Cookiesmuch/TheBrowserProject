@@ -136,6 +136,16 @@ if (Test-Path $stampFile) {
 if ($canSkip) {
     Write-Step "chromium.version + patches/ + overlay/ unchanged since the last successful run on this runner — skipping fetch/checkout/reset/resync (tree is already correctly patched; mtimes preserved for ninja's incremental cache)"
 } else {
+    # Invalidate the stamp before doing anything destructive below. Otherwise a
+    # fallback into this branch for a reason OTHER than a hash mismatch (e.g. the
+    # tree was unexpectedly dirty even though the hash still matched) resets the
+    # checkout back to the pristine, unpatched pinned commit while leaving the old
+    # stamp in place — apply-patches.ps1 would then see that still-matching stamp
+    # and skip reapplying entirely, leaving CI building an unpatched tree.
+    if (Test-Path $stampFile) {
+        Remove-Item $stampFile -Force
+    }
+
     Write-Step "Checking out pinned commit $pinnedCommit"
     Push-Location $srcDir
     try {
