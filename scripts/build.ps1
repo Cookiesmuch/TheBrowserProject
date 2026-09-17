@@ -175,18 +175,28 @@ try {
     # nothing meaningful is lost by skipping the wrapper.
     $sisoPathViaJunction = Join-Path $ChromiumSrc "third_party\siso\cipd\siso.exe"
     if (-not (Test-Path $sisoPathViaJunction)) { throw "siso.exe not found at $sisoPathViaJunction" }
-    # siso's own broken path-walking is almost certainly based on its own binary
-    # path (os.Executable() in Go), not just its working directory — resolving
-    # only the -C argument (previous attempt) and leaving the binary itself
-    # invoked via the junction still failed identically. Resolve both. This does
-    # not touch any cache file; it only changes which literal path strings siso
-    # is invoked with, so this build resumes from whatever's already in
-    # .siso_deps / .siso_fs_state exactly as before.
+    # Resolving the -C argument and the binary path alone (previous two attempts)
+    # still failed identically. The remaining culprit: this whole script has been
+    # sitting in Push-Location $ChromiumSrc (the junctioned path) since the top,
+    # and Push-Location calls SetCurrentDirectory with that literal string —
+    # Windows does not resolve reparse points when setting cwd, so the process's
+    # actual OS-level working directory stays the junctioned path no matter what
+    # -C argument siso is given. Go's os.Getwd() (whatever siso's CIPD/path logic
+    # actually reads) would still see the junctioned path. Fix: actually change
+    # directory into the resolved real path before invoking siso, then change
+    # back. This does not touch any cache file; it only changes which literal
+    # path siso's process is launched from, so this build resumes from whatever's
+    # already in .siso_deps / .siso_fs_state exactly as before.
     $sisoPath = Resolve-RealPath $sisoPathViaJunction
     $realOutPath = Resolve-RealPath $outPath
     Write-Step "siso ninja -C $realOutPath $Target (via $sisoPath)"
-    & $sisoPath ninja -C $realOutPath $Target
-    if ($LASTEXITCODE -ne 0) { throw "siso build failed" }
+    Push-Location $realOutPath
+    try {
+        & $sisoPath ninja -C $realOutPath $Target
+        if ($LASTEXITCODE -ne 0) { throw "siso build failed" }
+    } finally {
+        Pop-Location
+    }
 
     # The internal GN target/binary stays named "chrome" (chrome.exe) — renaming that
     # would ripple into installer/packaging/test scripts across the tree that reference
