@@ -1,10 +1,25 @@
 name: ci
 
+# A full Chromium build is measured in tens of minutes, so this deliberately does
+# NOT run on every push to a PR branch — doing so made iterating on a PR
+# painfully slow, since every intermediate commit queued another whole build.
+#
+# Instead it runs only when a change is actually a merge candidate. Since `main`
+# requires this check to pass before merging, trigger it by any of:
+#
+#   - marking a draft PR "Ready for review"  (the natural "done iterating" signal)
+#   - adding the `run-ci` label to a PR      (works while still a draft)
+#   - running it by hand from the Actions tab, or `gh workflow run ci.yml --ref <branch>`
+#
+# The recommended flow is therefore: open the PR as a draft, iterate freely with
+# no builds, then mark it ready when you want the merge check.
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+    types: [ready_for_review, labeled]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,7 +30,16 @@ jobs:
     # it run for a PR from a fork — only same-repo branches/PRs are trusted here. Also
     # keep "Require approval for first-time contributors" enabled under
     # Settings -> Actions -> General for this repo.
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    #
+    # The `labeled` trigger fires for *any* label, so it is narrowed to `run-ci`
+    # here; without that, unrelated labelling would kick off a full build.
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       (github.event.action == 'ready_for_review' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'run-ci')))
     steps:
       - name: Checkout
         uses: actions/checkout@v4
