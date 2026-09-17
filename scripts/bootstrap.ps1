@@ -16,6 +16,18 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# This machine has credential.helper=manager set system-wide (Git Credential
+# Manager, likely Git for Windows' own default), which applies to every https://
+# remote — including chromium.googlesource.com, which needs no auth at all for
+# reads. GCM tries to check/prompt for credentials anyway; in this non-interactive
+# service context that prompt can never be shown or answered, so the git process
+# just hangs forever. This is what was actually causing "bootstrap freezes for
+# 10+ minutes" — not network throttling, despite how it looked from the outside
+# (TCP connects fine; the hang is git waiting on a prompt, not on the network).
+# GIT_TERMINAL_PROMPT=0 makes git fail fast with a clear error instead of hanging
+# whenever it would otherwise try to prompt.
+$env:GIT_TERMINAL_PROMPT = "0"
+
 function Write-Step($msg) {
     Write-Host "==> $msg" -ForegroundColor Cyan
 }
