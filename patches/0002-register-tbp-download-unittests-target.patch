@@ -1,11 +1,12 @@
 diff --git a/BUILD.gn b/BUILD.gn
-index c2023e2ef4a8a..8de5a96fac2eb 100644
+index 91357cb2e60a5..8de5a96fac2eb 100644
 --- a/BUILD.gn
 +++ b/BUILD.gn
-@@ -104,6 +104,7 @@ group("gn_all") {
+@@ -103,6 +103,8 @@ group("gn_all") {
+       "//codelabs",
        "//components:components_unittests",
        "//components/gwp_asan:gwp_asan_unittests",
-       "//components/tbp_download:tbp_download_unittests",
++      "//components/tbp_download:tbp_download_unittests",
 +      "//components/tbp_download/network:tbp_download_network",
        "//infra/orchestrator:orchestrator_all",
        "//net:net_unittests",
