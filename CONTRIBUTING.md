@@ -1,0 +1,148 @@
+# Contributing to TheBrowserProject
+
+TheBrowserProject is a **Chromium source fork** (not CEF, not a from-scratch
+engine). We never commit Chromium source to this repo — instead we pin an
+upstream revision (`chromium.version`) and layer our changes on top as a
+`patches/` series plus an `overlay/` of wholesale new files, applied to a
+fresh checkout by our own scripts. This mirrors how Brave, Vivaldi, and
+ungoogled-chromium structure their forks.
+
+## Repo layout
+
+- `chromium.version` — the pinned upstream Chromium tag we build against.
+- `patches/` — ordered `NNNN-description.patch` files, `git apply`'d in
+  lexical order onto the pinned checkout.
+- `overlay/` — new files (whole new components) copied verbatim into the
+  checkout *before* patches are applied. Mirrors the `chromium/src` tree
+  layout, e.g. `overlay/chrome/browser/ui/tbp_sidebar/`.
+- `scripts/` — PowerShell automation (see below).
+- `args.gn.template` — baseline GN build args.
+
+## Local build
+
+Prerequisites:
+- Windows 11
+- ~100GB free disk (Chromium checkout + build output)
+- 16GB+ RAM minimum, 32GB+ recommended
+- Git, PowerShell 7+
+
+On a fresh machine, run `.\scripts\setup.ps1` first — an interactive wizard
+that installs Visual Studio 2022 + the C++ workload, the exact Windows SDK
+version the pinned Chromium revision needs, Windows long-path support, and
+a Defender exclusion for the checkout, then runs the steps below itself. It
+checks current state before each step, so it's safe to re-run.
+
+```powershell
+# One-time (or whenever chromium.version changes): installs depot_tools,
+# syncs the pinned revision. First run is ~100GB and can take hours.
+.\scripts\bootstrap.ps1
+
+# Every time you change patches/ or overlay/:
+.\scripts\apply-patches.ps1
+
+# Build:
+.\scripts\build.ps1
+```
+
+The resulting binary is at `chromium/src/out/Release/TheBrowserProject.exe` (the underlying GN target and object files remain named `chrome`/`chrome.exe` internally — see `patches/0001-rebrand-to-thebrowserproject.patch` and `scripts/build.ps1` for how branding and the shipped binary name are handled without renaming the internal build target).
+
+## Adding or updating a patch
+
+1. Make your change directly in the working checkout under `chromium/src`.
+2. If it's a **wholesale new file/component**, put it under `overlay/`
+   instead (mirroring its path under `chromium/src`) — don't hand-edit it
+   into a patch.
+3. If it's a **modification to an existing Chromium file**, run:
+   ```powershell
+   .\scripts\export-patches.ps1 -PatchName "short-description"
+   ```
+   This writes `patches/NNNN-short-description.patch` from your working
+   diff (auto-numbered after the last existing patch).
+4. Re-run `.\scripts\apply-patches.ps1` against a **clean** checkout to
+   confirm the patch applies cleanly before pushing.
+
+## Re-syncing against a new upstream revision
+
+1. Bump `chromium.version` to the new tag.
+2. Delete (or move aside) `chromium/` and re-run `.\scripts\bootstrap.ps1`
+   to sync fresh.
+3. Run `.\scripts\apply-patches.ps1` — fix any patch that no longer applies
+   cleanly (Chromium's own file may have moved/changed upstream).
+4. Run `.\scripts\build.ps1` and confirm it still builds and launches.
+
+## Required checks before pushing
+
+- `scripts/apply-patches.ps1` applies every patch cleanly.
+- `scripts/build.ps1` succeeds.
+- New patches are numbered and ordered correctly; new standalone files live
+  under `overlay/`, not squeezed into a patch.
+
+`.github/workflows/ci.yml` re-checks all of this on our self-hosted runner
+on every push to `main` and every pull request — so a direct push to a
+feature branch does **not** produce the required `ci` status check; open a
+PR for that. `.github/workflows/release.yml` builds and publishes a rolling
+`latest` prerelease whenever a PR actually merges into `main` — this is an
+interim placeholder for grabbing a runnable build (see
+[#13](https://github.com/Cookiesmuch/TheBrowserProject/issues/13) for the
+real versioning/changelog/auto-update system this will eventually become).
+It deliberately does **not** run on every push to a feature branch — that
+was the old `beta.yml`, which doubled CI cost on every single push while
+iterating on a PR; removed for exactly that reason.
+
+## Self-hosted runner setup
+
+Our CI needs to actually run a Chromium build, which standard GitHub-hosted
+runners (~14GB disk, 7GB RAM) cannot do. We run our own Windows runner
+instead. To register a machine as a runner:
+
+1. On GitHub: go to the repo → **Settings → Actions → Runners → New
+   self-hosted runner**.
+2. Select **Windows** / **x64**.
+3. Follow the download + configure commands GitHub shows you, e.g.:
+   ```powershell
+   mkdir actions-runner ; cd actions-runner
+   Invoke-WebRequest -Uri <download-url-from-github> -OutFile actions-runner.zip
+   Expand-Archive -Path actions-runner.zip -DestinationPath .
+   ./config.cmd --url https://github.com/Cookiesmuch/TheBrowserProject --token <token-from-github>
+   ```
+   When prompted for runner labels, make sure to include: `windows`,
+   `chromium-build` (our workflows target
+   `runs-on: [self-hosted, windows, chromium-build]`).
+4. Install it as a Windows service so it survives reboots and keeps
+   listening for jobs. There's no `./svc install` script in this runner
+   version (despite older docs mentioning one) — reconfigure with
+   `--runasservice` instead, which installs and starts the service as part
+   of setup:
+   ```powershell
+   ./config.cmd --url https://github.com/Cookiesmuch/TheBrowserProject --token <token-from-github> --runasservice
+   ```
+5. Confirm it shows as **Idle** under Settings → Actions → Runners, and as
+   `Running` via `Get-Service actions.runner.*`.
+6. Make sure the machine has depot_tools' prerequisites available (Visual
+   Studio 2022 Build Tools + Windows SDK) and ~100GB free disk — the same
+   requirements as a local build, above. (`scripts/setup.ps1` handles all of
+   this automatically if you'd rather not do it by hand.)
+7. Install the [GitHub CLI](https://cli.github.com/) (`winget install
+   GitHub.cli` or the MSI installer) and make sure `gh` is on `PATH` for the
+   runner service account. `release.yml` uses it to publish releases, and
+   unlike GitHub-hosted images, self-hosted runners don't ship with it
+   preinstalled.
+
+Once registered, `ci.yml` / `release.yml` will start picking up jobs
+automatically.
+
+**Security note:** `ci.yml` is guarded to skip pull requests from forks
+(fork PRs would otherwise run untrusted PowerShell — bootstrap/apply-patches/
+build — directly on this persistent, credentialed runner). Keep **Settings →
+Actions → General → "Require approval for first-time contributors"** enabled
+as a second layer of defense if this repo ever goes public with outside
+contributors.
+
+## Repo settings (if not already configured)
+
+If branch protection on `main` isn't already set via the GitHub API, enable
+manually under **Settings → Branches → Branch protection rules** for `main`:
+- Require a pull request before merging
+- Require status checks to pass before merging — require the `ci` check
+- Block force pushes
+- Do not allow deletion of the branch

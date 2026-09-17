@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: sync, patch, build, smoke-test
+    runs-on: [self-hosted, windows, chromium-build]
+    # SECURITY: this job runs PR-controlled PowerShell (bootstrap/apply-patches/build)
+    # on a persistent self-hosted runner with disk/network/credential access. Never let
+    # it run for a PR from a fork — only same-repo branches/PRs are trusted here. Also
+    # keep "Require approval for first-time contributors" enabled under
+    # Settings -> Actions -> General for this repo.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Default clean=true runs `git clean -ffdx`, which also deletes ignored
+          # paths — including the cached chromium/ checkout and depot_tools/ this
+          # runner is supposed to reuse across runs. Keep them.
+          clean: false
+
+      - name: Bootstrap (depot_tools + gclient sync)
+        shell: pwsh
+        run: ./scripts/bootstrap.ps1
+
+      - name: Apply overlay + patches
+        shell: pwsh
+        run: ./scripts/apply-patches.ps1
+
+      - name: Build
+        shell: pwsh
+        run: ./scripts/build.ps1
+
+      - name: Smoke test — TheBrowserProject.exe launches and exits cleanly
+        shell: pwsh
+        run: |
+          $exe = "chromium/src/out/Release/TheBrowserProject.exe"
+          if (-not (Test-Path $exe)) { throw "TheBrowserProject.exe not found at $exe" }
+          & $exe --headless --disable-gpu --dump-dom "about:blank" | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "TheBrowserProject.exe exited with code $LASTEXITCODE" }
+          Write-Host "TheBrowserProject.exe launched and exited cleanly"

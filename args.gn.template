@@ -1,0 +1,14 @@
+# Baseline GN args for TheBrowserProject Release builds.
+# scripts/build.ps1 writes this (with any per-build overrides) to out/Release/args.gn.
+
+is_debug = false
+is_component_build = false
+is_official_build = true
+symbol_level = 0
+blink_symbol_level = 0
+target_cpu = "x64"
+target_os = "win"
+
+# Keep default branding/updater/telemetry off until Milestone 1 branding work.
+chrome_pgo_phase = 0
+enable_backup_ref_ptr_support = false
