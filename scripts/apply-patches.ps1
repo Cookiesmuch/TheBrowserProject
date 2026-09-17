@@ -34,6 +34,26 @@ if (-not (Test-Path $ChromiumSrc)) {
     throw "Chromium checkout not found at $ChromiumSrc — run bootstrap.ps1 first"
 }
 
+# --- skip check (issue #12) ---
+# Mirrors bootstrap.ps1's skip check against the same stamp file: if
+# chromium.version + patches/ + overlay/ hash the same as what's already
+# recorded there, this tree is already fully patched and committed (or
+# bootstrap.ps1 already decided as much and left it alone) — copying overlay
+# files and reapplying + recommitting every patch again would be a no-op that
+# still rewrites file mtimes across the tree, defeating ninja's incremental
+# cache for nothing. Skip straight to done.
+. (Join-Path $PSScriptRoot "lib\Get-PatchStateHash.ps1")
+$versionFile = Join-Path $RepoRoot "chromium.version"
+$overlayDir = Join-Path $RepoRoot "overlay"
+$patchesDir = Join-Path $RepoRoot "patches"
+$desiredHash = Get-PatchStateHash -VersionFile $versionFile -PatchesDir $patchesDir -OverlayDir $overlayDir
+$stampFile = Join-Path (Split-Path $ChromiumSrc -Parent) ".tbp_stamp"
+
+if ((Test-Path $stampFile) -and ((Get-Content $stampFile -Raw).Trim() -eq $desiredHash)) {
+    Write-Step "patches/ + overlay/ + chromium.version unchanged since the last successful apply on this runner — skipping reapply (tree already correctly patched, mtimes preserved)"
+    exit 0
+}
+
 # Refuse to start if a TRACKED file is already modified going in. This is a
 # sanity check that bootstrap.ps1's reset actually left a clean tree — if it
 # didn't, something unexpected happened and a human needs to look, rather than
@@ -67,7 +87,6 @@ function Invoke-GitCommit($message, [string[]]$Paths) {
 }
 
 # --- overlay: copy new files verbatim, preserving relative paths ---
-$overlayDir = Join-Path $RepoRoot "overlay"
 $overlayFiles = Get-ChildItem -Path $overlayDir -Recurse -File | Where-Object { $_.Name -ne ".gitkeep" }
 if ($overlayFiles.Count -eq 0) {
     Write-Step "overlay/ is empty (no-op) — nothing to copy"
@@ -86,7 +105,6 @@ if ($overlayFiles.Count -eq 0) {
 }
 
 # --- patches: apply in lexical order ---
-$patchesDir = Join-Path $RepoRoot "patches"
 $patchFiles = Get-ChildItem -Path $patchesDir -Filter "*.patch" | Sort-Object Name
 if ($patchFiles.Count -eq 0) {
     Write-Step "patches/ is empty (no-op) — nothing to apply"
@@ -123,4 +141,11 @@ if ($patchFiles.Count -eq 0) {
     }
 }
 
+# Record what's now applied so bootstrap.ps1 and a future run of this script can
+# skip redoing this work (see issue #12) as long as chromium.version/patches/
+# overlay stay exactly this way. Lives outside the git checkout ($ChromiumDir,
+# not $ChromiumSrc) so it's untouched by git clean/reset and by design gets
+# invalidated (stamp goes stale, triggering a real reapply) whenever
+# bootstrap.ps1 actually resets the tree for a version bump.
+Set-Content -Path $stampFile -Value $desiredHash -NoNewline
 Write-Step "Overlay + patches applied cleanly"

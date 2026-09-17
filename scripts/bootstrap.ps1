@@ -101,42 +101,78 @@ if (-not (Test-Path $srcDir)) {
     throw "Expected checkout at $srcDir after fetch, but it's missing"
 }
 
-Write-Step "Checking out pinned commit $pinnedCommit"
-Push-Location $srcDir
-try {
-    git fetch origin $pinnedCommit
-    if ($LASTEXITCODE -ne 0) { throw "git fetch of pinned commit failed (exit $LASTEXITCODE)" }
+# --- skip check (issue #12) ---
+# git reset --hard + git clean -fd rewrite file mtimes broadly across the tree,
+# which defeats ninja's (mtime-based) staleness detection even when nothing
+# actually changed — turning every CI run into a near-full rebuild regardless of
+# how small the diff was. apply-patches.ps1 stamps $stampFile with a hash of
+# chromium.version + patches/ + overlay/ after it successfully finishes; if that
+# hash still matches what we'd apply now AND the tree has no uncommitted tracked
+# changes (i.e. it's exactly the fully-patched, fully-committed state
+# apply-patches.ps1 leaves behind), the tree is already correct and none of
+# fetch/checkout/reset/clean/sync/runhooks need to run at all. Falls back to the
+# full flow below on any mismatch, missing stamp, or unexpected dirty tree — this
+# only ever skips work, never skips verification.
+. (Join-Path $PSScriptRoot "lib\Get-PatchStateHash.ps1")
+$patchesDirForHash = Join-Path $RepoRoot "patches"
+$overlayDirForHash = Join-Path $RepoRoot "overlay"
+$desiredHash = Get-PatchStateHash -VersionFile $versionFile -PatchesDir $patchesDirForHash -OverlayDir $overlayDirForHash
+$stampFile = Join-Path $ChromiumDir ".tbp_stamp"
 
-    git checkout $pinnedCommit
-    if ($LASTEXITCODE -ne 0) { throw "git checkout of pinned commit failed (exit $LASTEXITCODE)" }
+$canSkip = $false
+if (Test-Path $stampFile) {
+    $stampedHash = (Get-Content $stampFile -Raw).Trim()
+    if ($stampedHash -eq $desiredHash) {
+        Push-Location $srcDir
+        try {
+            $trackedDirty = git status --porcelain | Where-Object { -not $_.StartsWith("??") }
+            if (-not $trackedDirty) { $canSkip = $true }
+        } finally {
+            Pop-Location
+        }
+    }
+}
 
-    # A prior CI/local run may have left patches applied (tracked-file edits) and
-    # overlay files copied in (untracked). Discard both so apply-patches.ps1 always
-    # starts from a pristine pinned tree — otherwise reapplying an already-applied
-    # patch fails, and deleted overlay files linger.
-    git reset --hard $pinnedCommit
-    if ($LASTEXITCODE -ne 0) { throw "git reset --hard failed (exit $LASTEXITCODE)" }
-    # Single -f only: third_party/* dependencies are each their own nested git
-    # checkout (gclient-managed, not tracked by src's own git index). A double -f
-    # (-ffd) forces git clean to descend into and wipe those nested repos too,
-    # which forces gclient sync to redownload every one of ~100 dependencies from
-    # scratch on every single rerun — this is what was hammering
-    # chromium.googlesource.com into HTTP 429 rate-limiting across our last few
-    # runs. Single -f leaves nested repos alone and only removes stray untracked
-    # files directly in src/ (like leftover overlay copies), which is all that's
-    # actually needed here.
-    git clean -fd -e out -e out/Release
-    if ($LASTEXITCODE -ne 0) { throw "git clean failed (exit $LASTEXITCODE)" }
+if ($canSkip) {
+    Write-Step "chromium.version + patches/ + overlay/ unchanged since the last successful run on this runner — skipping fetch/checkout/reset/resync (tree is already correctly patched; mtimes preserved for ninja's incremental cache)"
+} else {
+    Write-Step "Checking out pinned commit $pinnedCommit"
+    Push-Location $srcDir
+    try {
+        git fetch origin $pinnedCommit
+        if ($LASTEXITCODE -ne 0) { throw "git fetch of pinned commit failed (exit $LASTEXITCODE)" }
 
-    Write-Step "Running gclient sync (incremental after first run)"
-    & gclient sync --with_branch_heads --with_tags -D
-    if ($LASTEXITCODE -ne 0) { throw "gclient sync failed (exit $LASTEXITCODE)" }
+        git checkout $pinnedCommit
+        if ($LASTEXITCODE -ne 0) { throw "git checkout of pinned commit failed (exit $LASTEXITCODE)" }
 
-    Write-Step "Running gclient runhooks"
-    & gclient runhooks
-    if ($LASTEXITCODE -ne 0) { throw "gclient runhooks failed (exit $LASTEXITCODE)" }
-} finally {
-    Pop-Location
+        # A prior CI/local run may have left patches applied (tracked-file edits) and
+        # overlay files copied in (untracked). Discard both so apply-patches.ps1 always
+        # starts from a pristine pinned tree — otherwise reapplying an already-applied
+        # patch fails, and deleted overlay files linger.
+        git reset --hard $pinnedCommit
+        if ($LASTEXITCODE -ne 0) { throw "git reset --hard failed (exit $LASTEXITCODE)" }
+        # Single -f only: third_party/* dependencies are each their own nested git
+        # checkout (gclient-managed, not tracked by src's own git index). A double -f
+        # (-ffd) forces git clean to descend into and wipe those nested repos too,
+        # which forces gclient sync to redownload every one of ~100 dependencies from
+        # scratch on every single rerun — this is what was hammering
+        # chromium.googlesource.com into HTTP 429 rate-limiting across our last few
+        # runs. Single -f leaves nested repos alone and only removes stray untracked
+        # files directly in src/ (like leftover overlay copies), which is all that's
+        # actually needed here.
+        git clean -fd -e out -e out/Release
+        if ($LASTEXITCODE -ne 0) { throw "git clean failed (exit $LASTEXITCODE)" }
+
+        Write-Step "Running gclient sync (incremental after first run)"
+        & gclient sync --with_branch_heads --with_tags -D
+        if ($LASTEXITCODE -ne 0) { throw "gclient sync failed (exit $LASTEXITCODE)" }
+
+        Write-Step "Running gclient runhooks"
+        & gclient runhooks
+        if ($LASTEXITCODE -ne 0) { throw "gclient runhooks failed (exit $LASTEXITCODE)" }
+    } finally {
+        Pop-Location
+    }
 }
 
 Write-Step "Bootstrap complete. Checkout at $srcDir"
